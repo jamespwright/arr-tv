@@ -112,6 +112,21 @@ class ArrRepository(private val settings: ArrSettings) {
         }
     }
 
+    /** Everything Radarr or Sonarr is currently downloading or waiting to import. */
+    suspend fun queue(kind: MediaKind): List<QueueItem> = when (kind) {
+        MediaKind.MOVIE -> radarr.queue().records.toQueueItems(kind)
+        MediaKind.SHOW -> sonarr.queue().records.toQueueItems(kind)
+    }
+
+    /**
+     * Removes a download from the queue and the download client. With [blocklist], the release is
+     * never grabbed again and Radarr/Sonarr search for a different one.
+     */
+    suspend fun removeFromQueue(item: QueueItem, blocklist: Boolean) = when (item.kind) {
+        MediaKind.MOVIE -> radarr.removeFromQueue(QueueIds(item.ids), blocklist)
+        MediaKind.SHOW -> sonarr.removeFromQueue(QueueIds(item.ids), blocklist)
+    }
+
     private fun JsonObject.toSearchResult(kind: MediaKind, index: Int): SearchResult {
         val year = int("year") ?: 0
         val inLibrary = (int("id") ?: 0) > 0

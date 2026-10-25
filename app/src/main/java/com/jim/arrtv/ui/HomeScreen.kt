@@ -20,8 +20,8 @@ import androidx.tv.material3.TabRow
 import androidx.tv.material3.Text
 import com.jim.arrtv.data.MediaKind
 
-private val tabs = listOf("Search", "Movies", "TV Shows", "Settings")
-private const val SETTINGS_TAB = 3
+private val tabs = listOf("Search", "Downloads", "Movies", "TV Shows", "Settings")
+private const val SETTINGS_TAB = 4
 
 @Composable
 fun HomeScreen(vm: ArrViewModel) {
@@ -39,8 +39,9 @@ fun HomeScreen(vm: ArrViewModel) {
         Spacer(Modifier.height(24.dp))
         when (selected) {
             0 -> SearchScreen(vm)
-            1 -> LibraryContent(vm.library[MediaKind.MOVIE], MediaKind.MOVIE, vm::refresh)
-            2 -> LibraryContent(vm.library[MediaKind.SHOW], MediaKind.SHOW, vm::refresh)
+            1 -> QueueScreen(vm)
+            2 -> LibraryContent(vm.library[MediaKind.MOVIE], MediaKind.MOVIE, vm::refresh)
+            3 -> LibraryContent(vm.library[MediaKind.SHOW], MediaKind.SHOW, vm::refresh)
             SETTINGS_TAB -> SettingsScreen(vm.settings, vm::saveSettings)
         }
     }
@@ -55,6 +56,14 @@ fun HomeScreen(vm: ArrViewModel) {
                     onAdd = vm::confirmAdd,
                     onClose = vm::closeResult,
                 )
+            }
+        }
+    }
+
+    vm.queueAction?.let { action ->
+        Dialog(onDismissRequest = vm::closeQueueItem, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+            Surface(Modifier.fillMaxSize()) {
+                QueueItemScreen(action = action, onRemove = vm::removeQueueItem, onClose = vm::closeQueueItem)
             }
         }
     }

@@ -12,10 +12,13 @@ import com.jim.arrtv.data.ArrSettings
 import com.jim.arrtv.data.MediaItem
 import com.jim.arrtv.data.MediaKind
 import com.jim.arrtv.data.QualityProfile
+import com.jim.arrtv.data.QueueItem
 import com.jim.arrtv.data.SearchResult
 import com.jim.arrtv.data.SettingsStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
 import retrofit2.HttpException
 
@@ -41,6 +44,17 @@ data class AddState(
     val status: AddStatus = AddStatus.Ready,
 )
 
+/** The combined Radarr + Sonarr queue. [problems] lists services that couldn't be reached. */
+data class Queue(val items: List<QueueItem>, val problems: List<String>)
+
+sealed interface RemoveStatus {
+    data object Ready : RemoveStatus
+    data object Removing : RemoveStatus
+    data class Failed(val message: String) : RemoveStatus
+}
+
+data class QueueAction(val item: QueueItem, val status: RemoveStatus = RemoveStatus.Ready)
+
 class ArrViewModel(app: Application) : AndroidViewModel(app) {
     private val store = SettingsStore(app)
     private var repo = ArrRepository(store.load())
@@ -58,6 +72,13 @@ class ArrViewModel(app: Application) : AndroidViewModel(app) {
 
     /** The search result currently open on the add screen, if any. */
     var adding by mutableStateOf<AddState?>(null)
+        private set
+
+    var queue by mutableStateOf<Loadable<Queue>>(Loadable.Loading)
+        private set
+
+    /** The download currently open in the queue dialog, if any. */
+    var queueAction by mutableStateOf<QueueAction?>(null)
         private set
 
     init {
@@ -82,6 +103,54 @@ class ArrViewModel(app: Application) : AndroidViewModel(app) {
         }
         library[kind] = Loadable.Loading
         viewModelScope.launch { library[kind] = load { repo.library(kind) } }
+    }
+
+    /**
+     * Fetches both queues. The previous list stays on screen while this runs, so polling doesn't flash
+     * "Loading…" or lose focus.
+     */
+    suspend fun refreshQueue() {
+        val kinds = MediaKind.entries.filter { repo.isConfigured(it) }
+        if (kinds.isEmpty()) {
+            queue = Loadable.NotConfigured
+            return
+        }
+        val results = kinds.map { kind -> viewModelScope.async { kind to load { repo.queue(kind) } } }.awaitAll()
+        val items = results.flatMap { (_, r) -> (r as? Loadable.Loaded)?.value.orEmpty() }
+            .sortedWith(compareBy<QueueItem> { it.state }.thenByDescending { it.progress })
+        val problems = results.mapNotNull { (kind, r) -> (r as? Loadable.Error)?.let { "Couldn't reach ${kind.service}: ${it.message}" } }
+        queue = if (problems.size == results.size) Loadable.Error(problems.joinToString("\n")) else Loadable.Loaded(Queue(items, problems))
+        // Keep the open dialog showing the latest progress.
+        queueAction?.let { action ->
+            items.firstOrNull { it.key == action.item.key }?.let { queueAction = action.copy(item = it) }
+        }
+    }
+
+    fun openQueueItem(item: QueueItem) {
+        queueAction = QueueAction(item)
+    }
+
+    fun closeQueueItem() {
+        queueAction = null
+    }
+
+    fun removeQueueItem(blocklist: Boolean) {
+        val action = queueAction ?: return
+        if (action.status == RemoveStatus.Removing) return
+        queueAction = action.copy(status = RemoveStatus.Removing)
+        viewModelScope.launch {
+            try {
+                repo.removeFromQueue(action.item, blocklist)
+                if (queueAction?.item?.key == action.item.key) queueAction = null
+                refreshQueue()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (queueAction?.item?.key == action.item.key) {
+                    queueAction = queueAction?.copy(status = RemoveStatus.Failed(e.describe()))
+                }
+            }
+        }
     }
 
     fun chooseSearchKind(kind: MediaKind) {
