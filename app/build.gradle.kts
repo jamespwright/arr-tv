@@ -40,6 +40,8 @@ android {
     }
     kotlinOptions {
         jvmTarget = "17"
+        // FilterChip and friends are still marked experimental in tv-material 1.0.
+        freeCompilerArgs += "-opt-in=androidx.tv.material3.ExperimentalTvMaterial3Api"
     }
     buildFeatures {
         compose = true

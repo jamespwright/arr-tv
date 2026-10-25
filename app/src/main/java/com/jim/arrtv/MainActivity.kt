@@ -10,7 +10,7 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Surface
 import androidx.tv.material3.darkColorScheme
 import com.jim.arrtv.ui.HomeScreen
-import com.jim.arrtv.ui.LibraryViewModel
+import com.jim.arrtv.ui.ArrViewModel
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -18,7 +18,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    val vm: LibraryViewModel = viewModel()
+                    val vm: ArrViewModel = viewModel()
                     HomeScreen(vm)
                 }
             }

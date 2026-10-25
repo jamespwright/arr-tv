@@ -33,6 +33,13 @@ class SettingsStore(context: Context) {
             .apply()
     }
 
+    fun lastQualityProfile(kind: MediaKind): Int? =
+        prefs.getInt("profile_${kind.name}", -1).takeIf { it >= 0 }
+
+    fun setLastQualityProfile(kind: MediaKind, id: Int) {
+        prefs.edit().putInt("profile_${kind.name}", id).apply()
+    }
+
     private companion object {
         const val RADARR_URL = "radarr_url"
         const val RADARR_KEY = "radarr_key"
