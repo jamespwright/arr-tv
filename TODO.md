@@ -10,8 +10,11 @@ Jim's feedback from using the app on the TV. Tick items off (or delete them) as 
 
 ## Performance
 
-- [ ] **Switching tabs is a little laggy**, especially Search → Downloads → Movies → TV Shows → Settings.
-- [ ] **Scrolling the big Movies and TV Shows grids is a little laggy.**
+- [x] **Switching tabs is a little laggy**, especially Search → Downloads → Movies → TV Shows → Settings.
+  Tabs you pass over are no longer drawn. Each poster grid still takes about 0.1s to appear when you stop on it.
+- [x] **Scrolling the big Movies and TV Shows grids is a little laggy.**
+  Fixed with the release build and 500px posters from the server. Janky frames went from 10% to 3%.
+- [ ] **The first load of Movies and TV Shows takes about 10 seconds.** Not looked into yet.
 
 ## Features
 

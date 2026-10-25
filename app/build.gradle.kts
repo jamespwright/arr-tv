@@ -30,8 +30,13 @@ android {
     }
 
     buildTypes {
+        // The app is only ever sideloaded onto Jim's TV, so release builds reuse the debug signing key.
+        // Release is the build to install: R8 makes Compose noticeably smoother than the debug build.
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {

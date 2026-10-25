@@ -9,7 +9,8 @@ New movies and shows show up in Plex through the existing Unraid setup. This app
 - Talks to the Radarr and Sonarr v3 REST APIs using the `X-Api-Key` header
 
 ## Build
-- `./gradlew assembleDebug` creates `app/build/outputs/apk/debug/app-debug.apk`
+- `./gradlew assembleRelease` creates `app/build/outputs/apk/release/app-release.apk`. Install that one: it's minified with R8
+  and scrolls far more smoothly than the debug build. It's signed with the debug key, so it installs over either build.
 - This VM has only ~3.3 GB RAM, so `gradle.properties` caps the heap and runs Kotlin in-process. Keep it that way.
 - `local.properties` is gitignored. It holds the SDK path and the optional `arr.*` dev defaults (URLs and API keys) that get baked into builds so they don't have to be typed on the TV.
 
@@ -18,7 +19,8 @@ Radarr is at `http://192.168.0.2:7878` and Sonarr is at `http://192.168.0.2:8989
 The API keys are in `/mnt/user/appdata/{radarr,sonarr}/config.xml` on Unraid (`ssh root@192.168.0.2`). Copy them into `local.properties` and never commit them.
 
 ## Installing and testing on the TV
-The TV is the Sony Bravia at `192.168.0.31:5555`. Run `adb connect`, then `adb install -r app/build/outputs/apk/debug/app-debug.apk`.
+The TV is the Sony Bravia at `192.168.0.31:5555`. Run `adb connect`, then `adb install -r app/build/outputs/apk/release/app-release.apk`.
+Check jank with `adb shell dumpsys gfxinfo com.jim.arrtv` (run it with `reset` first).
 ADB debugging is normally turned off on the TV (see `bravia-speedup`), so Jim has to turn it back on first.
 When you drive the app with `input keyevent`, check that `com.jim.arrtv` is the resumed activity before every key press.
 If the app crashes, the keys go to the launcher and start other apps (it once opened Kayo).

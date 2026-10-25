@@ -96,7 +96,7 @@ interface SonarrApi {
 }
 
 @Serializable
-data class ArrImage(val coverType: String, val remoteUrl: String? = null)
+data class ArrImage(val coverType: String, val url: String? = null, val remoteUrl: String? = null)
 
 @Serializable
 data class RadarrMovie(
@@ -135,6 +135,8 @@ data class QueuePage(val records: List<QueueRecord> = emptyList())
 @Serializable
 data class QueueRecord(
     val id: Int,
+    val movieId: Int? = null,
+    val seriesId: Int? = null,
     val downloadId: String? = null,
     val title: String? = null,
     val status: String? = null,
@@ -171,7 +173,20 @@ data class QueueEpisode(val seasonNumber: Int, val episodeNumber: Int, val title
 @Serializable
 data class QueueIds(val ids: List<Int>)
 
-fun List<ArrImage>.posterUrl() = firstOrNull { it.coverType == "poster" }?.remoteUrl
+/**
+ * The poster for something already in Radarr/Sonarr. They keep 500px copies on the server, which load far
+ * faster than the full-size originals (often 1.5 MB each) and are on the local network.
+ */
+fun List<ArrImage>.posterUrl(serverUrl: String): String? {
+    val poster = firstOrNull { it.coverType == "poster" } ?: return null
+    poster.url?.takeIf { it.startsWith("/") }?.let {
+        return serverUrl.trim().trimEnd('/') + it.replace("/poster.", "/poster-500.")
+    }
+    return poster.remoteUrl?.let(::smallerPoster)
+}
+
+/** Asks TMDB for its 500px size instead of the full-size original. */
+fun smallerPoster(url: String) = url.replace("image.tmdb.org/t/p/original/", "image.tmdb.org/t/p/w500/")
 
 object ArrClient {
     val json = Json { ignoreUnknownKeys = true }

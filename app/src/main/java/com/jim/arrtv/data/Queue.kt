@@ -30,10 +30,10 @@ data class QueueItem(
     val messages: List<String>,
 )
 
-internal fun List<QueueRecord>.toQueueItems(kind: MediaKind): List<QueueItem> =
-    groupBy { it.downloadId ?: "id-${it.id}" }.map { (downloadId, records) -> records.toQueueItem(kind, downloadId) }
+internal fun List<QueueRecord>.toQueueItems(kind: MediaKind, serverUrl: String): List<QueueItem> =
+    groupBy { it.downloadId ?: "id-${it.id}" }.map { (downloadId, records) -> records.toQueueItem(kind, downloadId, serverUrl) }
 
-private fun List<QueueRecord>.toQueueItem(kind: MediaKind, downloadId: String): QueueItem {
+private fun List<QueueRecord>.toQueueItem(kind: MediaKind, downloadId: String, serverUrl: String): QueueItem {
     val first = first()
     val media = first.movie ?: first.series
     val messages = flatMap { r -> r.statusMessages.flatMap { it.messages } + listOfNotNull(r.errorMessage) }
@@ -49,7 +49,9 @@ private fun List<QueueRecord>.toQueueItem(kind: MediaKind, downloadId: String): 
             MediaKind.MOVIE -> media?.year?.takeIf { it > 0 }?.toString() ?: ""
             MediaKind.SHOW -> episodeDetail(mapNotNull { it.episode })
         },
-        posterUrl = media?.images?.posterUrl(),
+        // Queue records don't include the server's poster paths, but the 500px copy lives at a fixed one.
+        posterUrl = (first.movieId ?: first.seriesId)?.let { "${serverUrl.trim().trimEnd('/')}/MediaCover/$it/poster-500.jpg" }
+            ?: media?.images?.posterUrl(serverUrl),
         releaseTitle = first.title ?: "",
         quality = first.quality?.quality?.name,
         source = listOfNotNull(first.downloadClient, first.indexer).joinToString(" · "),

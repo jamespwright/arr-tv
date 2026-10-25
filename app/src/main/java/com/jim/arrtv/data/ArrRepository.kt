@@ -70,13 +70,13 @@ class ArrRepository(private val settings: ArrSettings) {
                     m.monitored -> "Wanted"
                     else -> "Not monitored"
                 }
-                MediaItem(MediaKind.MOVIE, m.id, m.title, "${m.year} · $status", m.images.posterUrl())
+                MediaItem(MediaKind.MOVIE, m.id, m.title, "${m.year} · $status", m.images.posterUrl(settings.radarrUrl))
             }
         MediaKind.SHOW -> sonarr.series()
             .sortedBy { (it.sortTitle ?: it.title).lowercase() }
             .map { s ->
                 val episodes = s.statistics?.let { "${it.episodeFileCount}/${it.episodeCount} episodes" } ?: ""
-                MediaItem(MediaKind.SHOW, s.id, s.title, "${s.year} · $episodes", s.images.posterUrl())
+                MediaItem(MediaKind.SHOW, s.id, s.title, "${s.year} · $episodes", s.images.posterUrl(settings.sonarrUrl))
             }
     }
 
@@ -124,8 +124,8 @@ class ArrRepository(private val settings: ArrSettings) {
 
     /** Everything Radarr or Sonarr is currently downloading or waiting to import. */
     suspend fun queue(kind: MediaKind): List<QueueItem> = when (kind) {
-        MediaKind.MOVIE -> radarr.queue().records.toQueueItems(kind)
-        MediaKind.SHOW -> sonarr.queue().records.toQueueItems(kind)
+        MediaKind.MOVIE -> radarr.queue().records.toQueueItems(kind, settings.radarrUrl)
+        MediaKind.SHOW -> sonarr.queue().records.toQueueItems(kind, settings.sonarrUrl)
     }
 
     /**
@@ -216,7 +216,7 @@ class ArrRepository(private val settings: ArrSettings) {
             key = "${kind.name}-$index-$externalId",
             title = string("title") ?: "Unknown",
             subtitle = listOfNotNull(year.takeIf { it > 0 }?.toString(), detail).joinToString(" · "),
-            posterUrl = string("remotePoster") ?: posterFromImages(),
+            posterUrl = (string("remotePoster") ?: posterFromImages())?.let(::smallerPoster),
             overview = string("overview") ?: "",
             inLibrary = inLibrary,
             raw = this,
