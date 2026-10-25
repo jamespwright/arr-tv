@@ -22,8 +22,15 @@ The TV is the Sony Bravia at `192.168.0.31:5555`. Run `adb connect`, then `adb i
 ADB debugging is normally turned off on the TV (see `bravia-speedup`), so Jim has to turn it back on first.
 When you drive the app with `input keyevent`, check that `com.jim.arrtv` is the resumed activity before every key press.
 If the app crashes, the keys go to the launcher and start other apps (it once opened Kayo).
-Don't press "Add and download" or the Downloads "Remove" buttons during testing. They start or delete real downloads on Jim's server.
+Don't press "Add and download", the Downloads "Remove" buttons, or any search or delete button on a detail page during testing.
+They start or delete real downloads (or files) on Jim's server. Monitoring toggles are fine if you switch them straight back.
+Send keys by name (up, down, left, right, ok, back), not raw keycodes. Keycode 23 is OK, not right, and mixing them up once started a real search.
+Detail pages open with focus on a search button, so never send ok straight after opening one.
+
+## To-do
+Jim's bug reports and feature requests are in `TODO.md`. Add new ones there.
 
 ## Layout
-- `data/`: settings storage, the API client and models, and `Queue.kt` (groups queue records per download and works out status labels)
-- `ui/`: the ViewModel and Compose screens (tabs: Search, Downloads, Movies, TV Shows, Settings)
+- `data/`: settings storage, the API client and models, `Details.kt` (full movie/series/episode records), and `Queue.kt` (groups queue records per download and works out status labels)
+- `ui/`: the ViewModel and Compose screens (tabs: Search, Downloads, Movies, TV Shows, Settings).
+  Selecting a poster in Movies or TV Shows opens `DetailScreen` (status, search, monitoring, quality, delete, and seasons and episodes for shows).

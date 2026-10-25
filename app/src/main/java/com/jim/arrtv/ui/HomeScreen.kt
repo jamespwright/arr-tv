@@ -40,8 +40,8 @@ fun HomeScreen(vm: ArrViewModel) {
         when (selected) {
             0 -> SearchScreen(vm)
             1 -> QueueScreen(vm)
-            2 -> LibraryContent(vm.library[MediaKind.MOVIE], MediaKind.MOVIE, vm::refresh)
-            3 -> LibraryContent(vm.library[MediaKind.SHOW], MediaKind.SHOW, vm::refresh)
+            2 -> LibraryContent(vm.library[MediaKind.MOVIE], MediaKind.MOVIE, vm::refresh, vm::openDetails)
+            3 -> LibraryContent(vm.library[MediaKind.SHOW], MediaKind.SHOW, vm::refresh, vm::openDetails)
             SETTINGS_TAB -> SettingsScreen(vm.settings, vm::saveSettings)
         }
     }
@@ -65,6 +65,12 @@ fun HomeScreen(vm: ArrViewModel) {
             Surface(Modifier.fillMaxSize()) {
                 QueueItemScreen(action = action, onRemove = vm::removeQueueItem, onClose = vm::closeQueueItem)
             }
+        }
+    }
+
+    vm.detail?.let { state ->
+        Dialog(onDismissRequest = vm::closeDetails, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+            Surface(Modifier.fillMaxSize()) { DetailScreen(state, vm) }
         }
     }
 }

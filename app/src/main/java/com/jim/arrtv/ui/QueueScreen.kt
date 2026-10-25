@@ -1,6 +1,5 @@
 package com.jim.arrtv.ui
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -30,12 +29,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
-import androidx.tv.material3.Border
 import androidx.tv.material3.Button
-import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.OutlinedButton
-import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import com.jim.arrtv.data.MediaKind
 import com.jim.arrtv.data.QueueItem
@@ -82,20 +78,7 @@ fun QueueScreen(vm: ArrViewModel) {
 
 @Composable
 private fun QueueRow(item: QueueItem, onClick: () -> Unit) {
-    // A dark highlight instead of the default light one, so the coloured status text stays readable.
-    Surface(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        colors = ClickableSurfaceDefaults.colors(
-            containerColor = Color.Transparent,
-            focusedContainerColor = Color.White.copy(alpha = 0.12f),
-            focusedContentColor = MaterialTheme.colorScheme.onSurface,
-        ),
-        border = ClickableSurfaceDefaults.border(
-            focusedBorder = Border(BorderStroke(2.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))),
-        ),
-        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.02f),
-    ) {
+    ListRow(onClick) {
         Row(
             modifier = Modifier.padding(12.dp),
             horizontalArrangement = Arrangement.spacedBy(20.dp),
@@ -175,7 +158,7 @@ private fun QueueItem.progressText() = listOfNotNull(sizeLabel.ifBlank { null },
 private fun QueueState.color(): Color = when (this) {
     QueueState.PROBLEM -> MaterialTheme.colorScheme.error
     QueueState.DOWNLOADING -> MaterialTheme.colorScheme.primary
-    QueueState.IMPORTING -> Color(0xFF81C784)
+    QueueState.IMPORTING -> Downloaded
     QueueState.WAITING -> MaterialTheme.colorScheme.onSurfaceVariant
 }
 

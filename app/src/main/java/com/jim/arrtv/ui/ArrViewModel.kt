@@ -9,11 +9,15 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.jim.arrtv.data.ArrRepository
 import com.jim.arrtv.data.ArrSettings
+import com.jim.arrtv.data.LibraryDetails
 import com.jim.arrtv.data.MediaItem
 import com.jim.arrtv.data.MediaKind
 import com.jim.arrtv.data.QualityProfile
 import com.jim.arrtv.data.QueueItem
 import com.jim.arrtv.data.SearchResult
+import com.jim.arrtv.data.SonarrEpisode
+import com.jim.arrtv.data.code
+import com.jim.arrtv.data.seasonName
 import com.jim.arrtv.data.SettingsStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -55,6 +59,18 @@ sealed interface RemoveStatus {
 
 data class QueueAction(val item: QueueItem, val status: RemoveStatus = RemoveStatus.Ready)
 
+/** A short note shown at the bottom of the detail page. [id] makes each one distinct, even with the same text. */
+data class DetailMessage(val text: String, val isError: Boolean = false, val id: Long = System.nanoTime())
+
+/** The library item open on the detail page. [working] is true while a change is being sent. */
+data class DetailState(
+    val item: MediaItem,
+    val details: Loadable<LibraryDetails> = Loadable.Loading,
+    val profiles: List<QualityProfile> = emptyList(),
+    val working: Boolean = false,
+    val message: DetailMessage? = null,
+)
+
 class ArrViewModel(app: Application) : AndroidViewModel(app) {
     private val store = SettingsStore(app)
     private var repo = ArrRepository(store.load())
@@ -81,6 +97,11 @@ class ArrViewModel(app: Application) : AndroidViewModel(app) {
     var queueAction by mutableStateOf<QueueAction?>(null)
         private set
 
+    /** The library item currently open on the detail page, if any. */
+    var detail by mutableStateOf<DetailState?>(null)
+        private set
+    private var detailChanged = false
+
     init {
         refresh()
     }
@@ -96,13 +117,114 @@ class ArrViewModel(app: Application) : AndroidViewModel(app) {
         MediaKind.entries.forEach(::loadLibrary)
     }
 
-    private fun loadLibrary(kind: MediaKind) {
+    /** With [quiet], the current list stays on screen (keeping its focus and scroll) until the new one arrives. */
+    private fun loadLibrary(kind: MediaKind, quiet: Boolean = false) {
         if (!repo.isConfigured(kind)) {
             library[kind] = Loadable.NotConfigured
             return
         }
-        library[kind] = Loadable.Loading
-        viewModelScope.launch { library[kind] = load { repo.library(kind) } }
+        val keepCurrent = quiet && library[kind] is Loadable.Loaded
+        if (!keepCurrent) library[kind] = Loadable.Loading
+        viewModelScope.launch {
+            val result = load { repo.library(kind) }
+            if (!keepCurrent || result is Loadable.Loaded) library[kind] = result
+        }
+    }
+
+    fun openDetails(item: MediaItem) {
+        detail = DetailState(item)
+        detailChanged = false
+        viewModelScope.launch {
+            val profiles = async { load { repo.qualityProfiles(item.kind) } }
+            val details = load { repo.details(item) }
+            val profileList = (profiles.await() as? Loadable.Loaded)?.value.orEmpty()
+            updateDetail(item) { it.copy(details = details, profiles = profileList) }
+        }
+    }
+
+    fun retryDetails() {
+        detail?.item?.let(::openDetails)
+    }
+
+    fun closeDetails() {
+        val item = detail?.item ?: return
+        detail = null
+        // The grid's subtitles show download and monitoring status, so refresh them if anything changed.
+        if (detailChanged) loadLibrary(item.kind, quiet = true)
+    }
+
+    fun clearDetailMessage(id: Long) {
+        detail?.takeIf { it.message?.id == id }?.let { detail = it.copy(message = null) }
+    }
+
+    fun searchDetails() {
+        val title = detail?.item?.title ?: return
+        detailAction(SEARCHING, "Searching for $title. Anything found will show up in Downloads.") { repo.searchIndexers(it) }
+    }
+
+    fun setDetailMonitored(monitored: Boolean) = detailAction { repo.setMonitored(it, monitored) }
+
+    fun setDetailQualityProfile(profileId: Int) = detailAction { repo.setQualityProfile(it, profileId) }
+
+    fun searchSeason(seasonNumber: Int) =
+        detailAction(SEARCHING, "Searching for ${seasonName(seasonNumber)}. Anything found will show up in Downloads.") {
+            repo.searchSeason(it as LibraryDetails.Show, seasonNumber)
+        }
+
+    fun setSeasonMonitored(seasonNumber: Int, monitored: Boolean) =
+        detailAction { repo.setSeasonMonitored(it as LibraryDetails.Show, seasonNumber, monitored) }
+
+    fun searchEpisode(episode: SonarrEpisode) =
+        detailAction(SEARCHING, "Searching for ${episode.code}. Anything found will show up in Downloads.") {
+            repo.searchEpisode(episode)
+        }
+
+    fun setEpisodeMonitored(episode: SonarrEpisode, monitored: Boolean) =
+        detailAction { repo.setEpisodeMonitored(episode, monitored) }
+
+    fun deleteDetails(deleteFiles: Boolean) = detailAction(reload = false) {
+        repo.delete(it, deleteFiles)
+        val item = detail?.item
+        detail = null
+        item?.let { loadLibrary(it.kind, quiet = true) }
+    }
+
+    /**
+     * Sends a change for the open item, then reloads it so the page shows what the server now has.
+     * The old details stay on screen meanwhile, so focus doesn't move. [working] is shown while it runs
+     * and [done] on success.
+     */
+    private fun detailAction(
+        working: String = "Saving…",
+        done: String? = null,
+        reload: Boolean = true,
+        action: suspend (LibraryDetails) -> Unit,
+    ) {
+        val state = detail ?: return
+        val details = (state.details as? Loadable.Loaded)?.value ?: return
+        if (state.working) return
+        detail = state.copy(working = true, message = DetailMessage(working))
+        viewModelScope.launch {
+            val message = try {
+                action(details)
+                detailChanged = true
+                if (reload) {
+                    val fresh = load { repo.details(state.item) }
+                    updateDetail(state.item) { it.copy(details = fresh as? Loadable.Loaded ?: it.details) }
+                }
+                done?.let { DetailMessage(it) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                DetailMessage("That didn't work: ${e.describe()}", isError = true)
+            }
+            updateDetail(state.item) { it.copy(working = false, message = message) }
+        }
+    }
+
+    /** Only applies the update if the same item is still open (the user may have backed out). */
+    private fun updateDetail(item: MediaItem, update: (DetailState) -> DetailState) {
+        detail?.takeIf { it.item.key == item.key }?.let { detail = update(it) }
     }
 
     /**
@@ -208,7 +330,7 @@ class ArrViewModel(app: Application) : AndroidViewModel(app) {
                 AddStatus.Failed(e.describe())
             }
             updateAdding(current.result) { it.copy(status = status) }
-            if (status == AddStatus.Added) loadLibrary(current.result.kind)
+            if (status == AddStatus.Added) loadLibrary(current.result.kind, quiet = true)
         }
     }
 
@@ -240,4 +362,8 @@ class ArrViewModel(app: Application) : AndroidViewModel(app) {
         } else {
             message ?: javaClass.simpleName
         }
+
+    private companion object {
+        const val SEARCHING = "Starting search…"
+    }
 }

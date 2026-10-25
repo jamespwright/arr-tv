@@ -1,14 +1,20 @@
 package com.jim.arrtv.data
 
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 
 enum class MediaKind(val label: String, val service: String) {
@@ -24,12 +30,16 @@ interface Poster {
     val posterUrl: String?
 }
 
+/** A movie or show already in Radarr/Sonarr. [id] is its id there. */
 data class MediaItem(
-    override val key: String,
+    val kind: MediaKind,
+    val id: Int,
     override val title: String,
     override val subtitle: String,
     override val posterUrl: String?,
-) : Poster
+) : Poster {
+    override val key get() = "${kind.name}-$id"
+}
 
 data class SearchResult(
     val kind: MediaKind,
@@ -60,13 +70,13 @@ class ArrRepository(private val settings: ArrSettings) {
                     m.monitored -> "Wanted"
                     else -> "Not monitored"
                 }
-                MediaItem("movie-${m.id}", m.title, "${m.year} · $status", m.images.posterUrl())
+                MediaItem(MediaKind.MOVIE, m.id, m.title, "${m.year} · $status", m.images.posterUrl())
             }
         MediaKind.SHOW -> sonarr.series()
             .sortedBy { (it.sortTitle ?: it.title).lowercase() }
             .map { s ->
                 val episodes = s.statistics?.let { "${it.episodeFileCount}/${it.episodeCount} episodes" } ?: ""
-                MediaItem("show-${s.id}", s.title, "${s.year} · $episodes", s.images.posterUrl())
+                MediaItem(MediaKind.SHOW, s.id, s.title, "${s.year} · $episodes", s.images.posterUrl())
             }
     }
 
@@ -127,13 +137,76 @@ class ArrRepository(private val settings: ArrSettings) {
         MediaKind.SHOW -> sonarr.removeFromQueue(QueueIds(item.ids), blocklist)
     }
 
+    suspend fun details(item: MediaItem): LibraryDetails = when (item.kind) {
+        MediaKind.MOVIE -> radarr.movie(item.id).let { LibraryDetails.Movie(it, it.decode<MovieDetails>()) }
+        MediaKind.SHOW -> coroutineScope {
+            val episodes = async { sonarr.episodes(item.id) }
+            val raw = sonarr.seriesById(item.id)
+            LibraryDetails.Show(raw, raw.decode<SeriesDetails>(), episodes.await())
+        }
+    }
+
+    /** Asks Radarr/Sonarr to search the indexers now and grab the best release for anything missing. */
+    suspend fun searchIndexers(details: LibraryDetails) = when (details) {
+        is LibraryDetails.Movie -> radarr.command(buildJsonObject {
+            put("name", "MoviesSearch")
+            putJsonArray("movieIds") { add(details.movie.id) }
+        })
+        is LibraryDetails.Show -> sonarr.command(buildJsonObject {
+            put("name", "SeriesSearch")
+            put("seriesId", details.series.id)
+        })
+    }
+
+    suspend fun searchSeason(show: LibraryDetails.Show, seasonNumber: Int) = sonarr.command(buildJsonObject {
+        put("name", "SeasonSearch")
+        put("seriesId", show.series.id)
+        put("seasonNumber", seasonNumber)
+    })
+
+    suspend fun searchEpisode(episode: SonarrEpisode) = sonarr.command(buildJsonObject {
+        put("name", "EpisodeSearch")
+        putJsonArray("episodeIds") { add(episode.id) }
+    })
+
+    suspend fun setMonitored(details: LibraryDetails, monitored: Boolean) = update(details) { put("monitored", monitored) }
+
+    suspend fun setQualityProfile(details: LibraryDetails, profileId: Int) =
+        update(details) { put("qualityProfileId", profileId) }
+
+    /** Sonarr also flips every episode in the season to match. */
+    suspend fun setSeasonMonitored(show: LibraryDetails.Show, seasonNumber: Int, monitored: Boolean) {
+        val seasons = show.raw["seasons"]?.jsonArray.orEmpty().map { element ->
+            val season = element.jsonObject
+            if (season.int("seasonNumber") == seasonNumber) season.with { put("monitored", monitored) } else season
+        }
+        update(show) { put("seasons", JsonArray(seasons)) }
+    }
+
+    suspend fun setEpisodeMonitored(episode: SonarrEpisode, monitored: Boolean) =
+        sonarr.monitorEpisodes(EpisodeMonitor(listOf(episode.id), monitored))
+
+    /** Removes it from Radarr/Sonarr. With [deleteFiles], its files go too, so it disappears from Plex. */
+    suspend fun delete(details: LibraryDetails, deleteFiles: Boolean) = when (details) {
+        is LibraryDetails.Movie -> radarr.deleteMovie(details.movie.id, deleteFiles)
+        is LibraryDetails.Show -> sonarr.deleteSeries(details.series.id, deleteFiles)
+    }
+
+    /** PUTs the record back with [change] applied. Radarr and Sonarr only accept the whole record. */
+    private suspend fun update(details: LibraryDetails, change: JsonObjectBuilder.() -> Unit) = when (details) {
+        is LibraryDetails.Movie -> radarr.updateMovie(details.movie.id, details.raw.with(change))
+        is LibraryDetails.Show -> sonarr.updateSeries(details.series.id, details.raw.with(change))
+    }
+
+    private inline fun <reified T> JsonObject.decode(): T = ArrClient.json.decodeFromJsonElement(this)
+
     private fun JsonObject.toSearchResult(kind: MediaKind, index: Int): SearchResult {
         val year = int("year") ?: 0
         val inLibrary = (int("id") ?: 0) > 0
         val detail = when {
             inLibrary -> "In library"
             kind == MediaKind.SHOW -> seasonCount()?.let { if (it == 1) "1 season" else "$it seasons" }
-            else -> int("runtime")?.takeIf { it > 0 }?.let { if (it < 60) "${it}m" else "${it / 60}h ${it % 60}m" }
+            else -> int("runtime")?.let(::formatRuntime)
         }
         // Sonarr reports tmdbId as 0 for many shows, so use the id each service actually keys on,
         // plus the index, which keeps the key unique even if an id is missing.

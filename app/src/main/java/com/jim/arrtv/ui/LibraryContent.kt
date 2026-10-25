@@ -1,5 +1,6 @@
 package com.jim.arrtv.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,23 +16,35 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.tv.material3.Border
 import androidx.tv.material3.Button
 import androidx.tv.material3.Card
+import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.MaterialTheme
+import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import coil.compose.AsyncImage
 import com.jim.arrtv.data.MediaItem
 import com.jim.arrtv.data.MediaKind
 import com.jim.arrtv.data.Poster
 
+/** The colour for things that are downloaded and done. */
+val Downloaded = Color(0xFF81C784)
+
 @Composable
-fun LibraryContent(state: Loadable<List<MediaItem>>?, kind: MediaKind, onRetry: () -> Unit) {
+fun LibraryContent(
+    state: Loadable<List<MediaItem>>?,
+    kind: MediaKind,
+    onRetry: () -> Unit,
+    onOpen: (MediaItem) -> Unit,
+) {
     LoadableContent(state ?: Loadable.Loading, kind, onRetry, emptyText = "Nothing in ${kind.service} yet.") { items ->
-        PosterGrid(items, onClick = {})
+        PosterGrid(items, onClick = onOpen)
     }
 }
 
@@ -98,4 +111,23 @@ private fun PosterCard(item: Poster, onClick: () -> Unit) {
 @Composable
 fun PosterImage(url: String?, title: String, modifier: Modifier = Modifier.fillMaxSize()) {
     AsyncImage(model = url, contentDescription = title, contentScale = ContentScale.Crop, modifier = modifier)
+}
+
+/** A full-width clickable row for lists (downloads, episodes). */
+@Composable
+fun ListRow(onClick: () -> Unit, content: @Composable () -> Unit) {
+    // A dark highlight instead of the default light one, so coloured status text stays readable.
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = Color.Transparent,
+            focusedContainerColor = Color.White.copy(alpha = 0.12f),
+            focusedContentColor = MaterialTheme.colorScheme.onSurface,
+        ),
+        border = ClickableSurfaceDefaults.border(
+            focusedBorder = Border(BorderStroke(2.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))),
+        ),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1.02f),
+    ) { content() }
 }

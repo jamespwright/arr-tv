@@ -8,9 +8,12 @@ import okhttp3.OkHttpClient
 import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.HTTP
 import retrofit2.http.POST
+import retrofit2.http.PUT
+import retrofit2.http.Path
 import retrofit2.http.Query
 
 // Retrofit doesn't allow service interfaces to extend each other, so Radarr and Sonarr each get their own.
@@ -31,6 +34,19 @@ interface RadarrApi {
 
     @GET("api/v3/rootfolder")
     suspend fun rootFolders(): List<RootFolder>
+
+    @GET("api/v3/movie/{id}")
+    suspend fun movie(@Path("id") id: Int): JsonObject
+
+    @PUT("api/v3/movie/{id}?moveFiles=false")
+    suspend fun updateMovie(@Path("id") id: Int, @Body movie: JsonObject)
+
+    @DELETE("api/v3/movie/{id}?addImportExclusion=false")
+    suspend fun deleteMovie(@Path("id") id: Int, @Query("deleteFiles") deleteFiles: Boolean)
+
+    @POST("api/v3/command")
+    suspend fun command(@Body command: JsonObject)
+
     @GET("api/v3/queue?page=1&pageSize=500&includeMovie=true")
     suspend fun queue(): QueuePage
 
@@ -53,6 +69,25 @@ interface SonarrApi {
 
     @GET("api/v3/rootfolder")
     suspend fun rootFolders(): List<RootFolder>
+
+    @GET("api/v3/series/{id}")
+    suspend fun seriesById(@Path("id") id: Int): JsonObject
+
+    @PUT("api/v3/series/{id}?moveFiles=false")
+    suspend fun updateSeries(@Path("id") id: Int, @Body series: JsonObject)
+
+    @DELETE("api/v3/series/{id}?addImportListExclusion=false")
+    suspend fun deleteSeries(@Path("id") id: Int, @Query("deleteFiles") deleteFiles: Boolean)
+
+    @GET("api/v3/episode?includeEpisodeFile=true")
+    suspend fun episodes(@Query("seriesId") seriesId: Int): List<SonarrEpisode>
+
+    @PUT("api/v3/episode/monitor")
+    suspend fun monitorEpisodes(@Body body: EpisodeMonitor)
+
+    @POST("api/v3/command")
+    suspend fun command(@Body command: JsonObject)
+
     @GET("api/v3/queue?page=1&pageSize=500&includeSeries=true&includeEpisode=true")
     suspend fun queue(): QueuePage
 
@@ -85,7 +120,7 @@ data class SonarrSeries(
 )
 
 @Serializable
-data class SeriesStatistics(val episodeFileCount: Int = 0, val episodeCount: Int = 0)
+data class SeriesStatistics(val episodeFileCount: Int = 0, val episodeCount: Int = 0, val sizeOnDisk: Double = 0.0)
 
 @Serializable
 data class QualityProfile(val id: Int, val name: String)
@@ -139,7 +174,7 @@ data class QueueIds(val ids: List<Int>)
 fun List<ArrImage>.posterUrl() = firstOrNull { it.coverType == "poster" }?.remoteUrl
 
 object ArrClient {
-    private val json = Json { ignoreUnknownKeys = true }
+    val json = Json { ignoreUnknownKeys = true }
 
     fun <T> create(baseUrl: String, apiKey: String, service: Class<T>): T {
         val http = OkHttpClient.Builder()
