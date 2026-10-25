@@ -28,6 +28,8 @@ Don't press "Add and download", the Downloads "Remove" buttons, or any search or
 They start or delete real downloads (or files) on Jim's server. Monitoring toggles are fine if you switch them straight back.
 Send keys by name (up, down, left, right, ok, back), not raw keycodes. Keycode 23 is OK, not right, and mixing them up once started a real search.
 Detail pages open with focus on a search button, so never send ok straight after opening one.
+The add page (from a Search result) opens with focus on "Add and download", so move off it before pressing ok.
+If the TV's screensaver (`DreamActivity`) is the resumed activity, send `input keyevent KEYCODE_WAKEUP` to dismiss it. `am start` doesn't.
 
 ## To-do
 Jim's bug reports and feature requests are in `TODO.md`. Add new ones there.
@@ -35,4 +37,5 @@ Jim's bug reports and feature requests are in `TODO.md`. Add new ones there.
 ## Layout
 - `data/`: settings storage, the API client and models, `Details.kt` (full movie/series/episode records), and `Queue.kt` (groups queue records per download and works out status labels)
 - `ui/`: the ViewModel and Compose screens (tabs: Search, Downloads, Movies, TV Shows, Settings).
+  Movies and TV Shows have a search box above the grid that filters it (`LibraryContent.kt`).
   Selecting a poster in Movies or TV Shows opens `DetailScreen` (status, search, monitoring, quality, delete, and seasons and episodes for shows).

@@ -1,6 +1,22 @@
 package com.jim.arrtv.ui
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.grid.LazyGridState
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.input.ImeAction
+import androidx.tv.material3.OutlinedButton
+import androidx.compose.material3.MaterialTheme as M3Theme
+import androidx.compose.material3.darkColorScheme as m3DarkColorScheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,6 +37,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -46,16 +63,103 @@ import com.jim.arrtv.data.Poster
 val Downloaded = Color(0xFF81C784)
 
 @Composable
-fun LibraryContent(
-    state: Loadable<List<MediaItem>>?,
-    kind: MediaKind,
-    onRetry: () -> Unit,
-    onOpen: (MediaItem) -> Unit,
-) {
-    LoadableContent(state ?: Loadable.Loading, kind, onRetry, emptyText = "Nothing in ${kind.service} yet.") { items ->
-        PosterGrid(items, onClick = onOpen)
+fun LibraryContent(vm: ArrViewModel, kind: MediaKind) {
+    val filter = vm.libraryFilter[kind].orEmpty()
+    LoadableContent(vm.library[kind] ?: Loadable.Loading, kind, vm::refresh, emptyText = "Nothing in ${kind.service} yet.") { items ->
+        LibraryGrid(items, kind, filter, { vm.setLibraryFilter(kind, it) }, vm::openDetails)
     }
 }
+
+/**
+ * The library poster grid with a search box above it. Pressing down from the tab bar still lands on the
+ * posters. The search button is one press up from them.
+ */
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+private fun LibraryGrid(
+    items: List<MediaItem>,
+    kind: MediaKind,
+    filter: String,
+    onFilterChange: (String) -> Unit,
+    onOpen: (MediaItem) -> Unit,
+) {
+    var editing by remember { mutableStateOf(false) }
+    val fieldFocus = remember { FocusRequester() }
+    val gridFocus = remember { FocusRequester() }
+    val gridState = rememberLazyGridState()
+    val keyboard = LocalSoftwareKeyboardController.current
+    // Set when the focused button or text field is about to disappear, so focus doesn't drop to the tab bar.
+    var jumpToGrid by remember { mutableStateOf(false) }
+
+    val query = remember(filter) { searchKey(filter) }
+    val shown = remember(items, query) {
+        if (query.isEmpty()) items else items.filter { searchKey(it.title).contains(query) }
+    }
+
+    LaunchedEffect(query) { gridState.scrollToItem(0) }
+    LaunchedEffect(editing) { if (editing) runCatching { fieldFocus.requestFocus() } }
+    LaunchedEffect(jumpToGrid) {
+        if (jumpToGrid) {
+            withFrameNanos {} // let the row update first
+            runCatching { gridFocus.requestFocus() }
+            jumpToGrid = false
+        }
+    }
+
+    Column(
+        Modifier
+            // A focus request for the text field also counts as entering, so only redirect when not typing.
+            .focusProperties { enter = { if (editing || shown.isEmpty()) FocusRequester.Default else gridFocus } }
+            .focusGroup(),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            if (editing) {
+                var hadFocus by remember { mutableStateOf(false) }
+                M3Theme(colorScheme = m3DarkColorScheme()) {
+                    OutlinedTextField(
+                        value = filter,
+                        onValueChange = onFilterChange,
+                        label = { androidx.compose.material3.Text("Search ${kind.label.lowercase()}") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(onSearch = {
+                            keyboard?.hide()
+                            editing = false
+                            jumpToGrid = shown.isNotEmpty()
+                        }),
+                        modifier = Modifier
+                            .width(560.dp)
+                            .focusRequester(fieldFocus)
+                            .onFocusChanged {
+                                if (it.isFocused) hadFocus = true else if (hadFocus) editing = false
+                            },
+                    )
+                }
+            } else {
+                OutlinedButton(onClick = { editing = true }) {
+                    Text(if (filter.isBlank()) "Search ${kind.label.lowercase()}" else "Search: \u201c$filter\u201d")
+                }
+                if (filter.isNotBlank()) {
+                    OutlinedButton(onClick = {
+                        onFilterChange("")
+                        jumpToGrid = true
+                    }) { Text("Clear") }
+                }
+            }
+            if (query.isNotEmpty()) Text("${shown.size} of ${items.size}", style = MaterialTheme.typography.bodyMedium)
+        }
+        Spacer(Modifier.height(20.dp))
+        if (shown.isEmpty()) {
+            Message("Nothing in ${kind.service} matches \u201c$filter\u201d.")
+        } else {
+            // While typing, the grid mustn't pull focus out of the text field when the poster it last had disappears.
+            PosterGrid(shown, onClick = onOpen, modifier = Modifier.focusRequester(gridFocus), state = gridState, keepFocus = !editing)
+        }
+    }
+}
+
+/** Lower case with punctuation and spaces removed, so "spiderman" finds "Spider-Man". */
+private fun searchKey(text: String) = text.lowercase().filter { it.isLetterOrDigit() }
 
 /** Shared loading / not-configured / error handling for anything fetched from Radarr or Sonarr. */
 @Composable
@@ -90,14 +194,22 @@ fun Message(text: String) {
 }
 
 @Composable
-fun <T : Poster> PosterGrid(items: List<T>, onClick: (T) -> Unit) {
+fun <T : Poster> PosterGrid(
+    items: List<T>,
+    onClick: (T) -> Unit,
+    modifier: Modifier = Modifier,
+    state: LazyGridState = rememberLazyGridState(),
+    keepFocus: Boolean = true,
+) {
     val focusRequesters = remember { mutableMapOf<String, FocusRequester>() }
     var focusedKey by remember { mutableStateOf<String?>(null) }
     var focusedIndex by remember { mutableIntStateOf(0) }
 
     // If the focused poster disappears (it was just deleted), focus would otherwise drop out of the grid
     // and the next key press would land on the tab bar. Move it to whatever now sits in that spot.
+    val keepFocusNow by rememberUpdatedState(keepFocus)
     LaunchedEffect(items) {
+        if (!keepFocusNow) return@LaunchedEffect
         val key = focusedKey ?: return@LaunchedEffect
         if (items.isEmpty() || items.any { it.key == key }) return@LaunchedEffect
         val next = items[focusedIndex.coerceAtMost(items.lastIndex)]
@@ -106,6 +218,8 @@ fun <T : Poster> PosterGrid(items: List<T>, onClick: (T) -> Unit) {
 
     LazyVerticalGrid(
         columns = GridCells.Adaptive(150.dp),
+        modifier = modifier,
+        state = state,
         horizontalArrangement = Arrangement.spacedBy(20.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {

@@ -45,6 +45,8 @@ data class AddState(
     val result: SearchResult,
     val profiles: Loadable<List<QualityProfile>> = Loadable.Loading,
     val selectedProfileId: Int? = null,
+    /** The seasons to monitor and download, for a show. Starts as every season except specials. */
+    val selectedSeasons: Set<Int> = result.seasons.filter { it > 0 }.toSet(),
     val status: AddStatus = AddStatus.Ready,
 )
 
@@ -78,6 +80,9 @@ class ArrViewModel(app: Application) : AndroidViewModel(app) {
     var settings by mutableStateOf(store.load())
         private set
     val library = mutableStateMapOf<MediaKind, Loadable<List<MediaItem>>>()
+
+    /** What's typed into the search box on the Movies and TV Shows tabs. Kept until the app closes. */
+    val libraryFilter = mutableStateMapOf<MediaKind, String>()
 
     var searchKind by mutableStateOf(MediaKind.MOVIE)
         private set
@@ -129,6 +134,10 @@ class ArrViewModel(app: Application) : AndroidViewModel(app) {
             val result = load { repo.library(kind) }
             if (!keepCurrent || result is Loadable.Loaded) library[kind] = result
         }
+    }
+
+    fun setLibraryFilter(kind: MediaKind, filter: String) {
+        libraryFilter[kind] = filter
     }
 
     fun openDetails(item: MediaItem) {
@@ -314,6 +323,21 @@ class ArrViewModel(app: Application) : AndroidViewModel(app) {
         updateAdding(current.result) { it.copy(selectedProfileId = id) }
     }
 
+    fun toggleSeason(seasonNumber: Int) {
+        val current = adding ?: return
+        val seasons = current.selectedSeasons
+        updateAdding(current.result) {
+            it.copy(selectedSeasons = if (seasonNumber in seasons) seasons - seasonNumber else seasons + seasonNumber)
+        }
+    }
+
+    /** Selects every season except specials, or clears them all if they're already selected. */
+    fun toggleAllSeasons() {
+        val current = adding ?: return
+        val all = current.result.seasons.filter { it > 0 }.toSet()
+        updateAdding(current.result) { it.copy(selectedSeasons = if (current.selectedSeasons.containsAll(all)) emptySet() else all) }
+    }
+
     fun confirmAdd() {
         val current = adding ?: return
         val profileId = current.selectedProfileId ?: return
@@ -321,7 +345,7 @@ class ArrViewModel(app: Application) : AndroidViewModel(app) {
         updateAdding(current.result) { it.copy(status = AddStatus.Adding) }
         viewModelScope.launch {
             val status = try {
-                repo.add(current.result, profileId)
+                repo.add(current.result, profileId, current.selectedSeasons)
                 store.setLastQualityProfile(current.result.kind, profileId)
                 AddStatus.Added
             } catch (e: CancellationException) {

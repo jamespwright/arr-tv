@@ -7,6 +7,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
+import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
@@ -49,6 +50,8 @@ data class SearchResult(
     override val posterUrl: String?,
     val overview: String,
     val inLibrary: Boolean,
+    /** Season numbers for a show, in order. 0 is specials. Empty for movies. */
+    val seasons: List<Int>,
     val raw: JsonObject,
 ) : Poster
 
@@ -93,8 +96,11 @@ class ArrRepository(private val settings: ArrSettings) {
         MediaKind.SHOW -> sonarr.qualityProfiles()
     }
 
-    /** Adds the result to Radarr/Sonarr as monitored and starts a search for it straight away. */
-    suspend fun add(result: SearchResult, qualityProfileId: Int) {
+    /**
+     * Adds the result to Radarr/Sonarr as monitored and starts a search for it straight away.
+     * For a show, only [seasons] are monitored and searched. New seasons are always monitored.
+     */
+    suspend fun add(result: SearchResult, qualityProfileId: Int, seasons: Set<Int> = emptySet()) {
         when (result.kind) {
             MediaKind.MOVIE -> {
                 val root = radarr.rootFolders().first().path
@@ -113,9 +119,19 @@ class ArrRepository(private val settings: ArrSettings) {
                     put("rootFolderPath", root)
                     put("monitored", true)
                     put("seasonFolder", true)
+                    put("monitorNewItems", "all")
+                    putJsonArray("seasons") {
+                        result.seasons.forEach { number ->
+                            addJsonObject {
+                                put("seasonNumber", number)
+                                put("monitored", number in seasons)
+                            }
+                        }
+                    }
+                    // "skip" tells Sonarr to use the seasons' monitored flags instead of a preset.
                     putJsonObject("addOptions") {
-                        put("monitor", "all")
-                        put("searchForMissingEpisodes", true)
+                        put("monitor", "skip")
+                        put("searchForMissingEpisodes", seasons.isNotEmpty())
                     }
                 })
             }
@@ -219,6 +235,7 @@ class ArrRepository(private val settings: ArrSettings) {
             posterUrl = (string("remotePoster") ?: posterFromImages())?.let(::smallerPoster),
             overview = string("overview") ?: "",
             inLibrary = inLibrary,
+            seasons = this["seasons"]?.jsonArray.orEmpty().mapNotNull { (it as? JsonObject)?.int("seasonNumber") }.sorted(),
             raw = this,
         )
     }

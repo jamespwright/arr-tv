@@ -101,8 +101,8 @@ fun HomeScreen(vm: ArrViewModel) {
         when (shown) {
             0 -> SearchScreen(vm)
             1 -> QueueScreen(vm)
-            2 -> LibraryContent(vm.library[MediaKind.MOVIE], MediaKind.MOVIE, vm::refresh, vm::openDetails)
-            3 -> LibraryContent(vm.library[MediaKind.SHOW], MediaKind.SHOW, vm::refresh, vm::openDetails)
+            2 -> LibraryContent(vm, MediaKind.MOVIE)
+            3 -> LibraryContent(vm, MediaKind.SHOW)
             SETTINGS_TAB -> SettingsScreen(vm.settings, vm::saveSettings)
         }
     }
@@ -114,6 +114,8 @@ fun HomeScreen(vm: ArrViewModel) {
                 AddScreen(
                     state = state,
                     onSelectProfile = vm::selectProfile,
+                    onToggleSeason = vm::toggleSeason,
+                    onToggleAllSeasons = vm::toggleAllSeasons,
                     onAdd = vm::confirmAdd,
                     onClose = vm::closeResult,
                 )
