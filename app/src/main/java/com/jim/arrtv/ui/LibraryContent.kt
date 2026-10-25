@@ -4,6 +4,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.grid.LazyGridScope
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.text.KeyboardActions
@@ -200,6 +201,8 @@ fun <T : Poster> PosterGrid(
     modifier: Modifier = Modifier,
     state: LazyGridState = rememberLazyGridState(),
     keepFocus: Boolean = true,
+    /** Full-width rows above the posters, which scroll away with them. */
+    header: LazyGridScope.() -> Unit = {},
 ) {
     val focusRequesters = remember { mutableMapOf<String, FocusRequester>() }
     var focusedKey by remember { mutableStateOf<String?>(null) }
@@ -223,6 +226,7 @@ fun <T : Poster> PosterGrid(
         horizontalArrangement = Arrangement.spacedBy(20.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
+        header()
         itemsIndexed(items, key = { _, item -> item.key }) { index, item ->
             val requester = focusRequesters.getOrPut(item.key) { FocusRequester() }
             PosterCard(

@@ -27,6 +27,7 @@ android {
         buildConfigField("String", "DEFAULT_RADARR_KEY", localProp("arr.radarrKey"))
         buildConfigField("String", "DEFAULT_SONARR_URL", localProp("arr.sonarrUrl"))
         buildConfigField("String", "DEFAULT_SONARR_KEY", localProp("arr.sonarrKey"))
+        buildConfigField("String", "DEFAULT_TMDB_KEY", localProp("arr.tmdbKey"))
     }
 
     buildTypes {

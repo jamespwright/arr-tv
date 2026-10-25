@@ -79,6 +79,10 @@ interface SonarrApi {
     @DELETE("api/v3/series/{id}?addImportListExclusion=false")
     suspend fun deleteSeries(@Path("id") id: Int, @Query("deleteFiles") deleteFiles: Boolean)
 
+    /** Sonarr only honours one seriesId per request. */
+    @GET("api/v3/episodefile")
+    suspend fun episodeFiles(@Query("seriesId") seriesId: Int): List<FileDate>
+
     @GET("api/v3/episode?includeEpisodeFile=true")
     suspend fun episodes(@Query("seriesId") seriesId: Int): List<SonarrEpisode>
 
@@ -104,10 +108,18 @@ data class RadarrMovie(
     val title: String,
     val sortTitle: String? = null,
     val year: Int = 0,
+    val tmdbId: Int = 0,
     val hasFile: Boolean = false,
     val monitored: Boolean = false,
     val images: List<ArrImage> = emptyList(),
+    /** When it was added to Radarr, as an ISO timestamp. */
+    val added: String? = null,
+    val movieFile: FileDate? = null,
 )
+
+/** Just the date a movie or episode file was imported, as an ISO timestamp. */
+@Serializable
+data class FileDate(val dateAdded: String? = null)
 
 @Serializable
 data class SonarrSeries(
@@ -115,8 +127,11 @@ data class SonarrSeries(
     val title: String,
     val sortTitle: String? = null,
     val year: Int = 0,
+    val tmdbId: Int = 0,
     val images: List<ArrImage> = emptyList(),
     val statistics: SeriesStatistics? = null,
+    /** When it was added to Sonarr, as an ISO timestamp. */
+    val added: String? = null,
 )
 
 @Serializable

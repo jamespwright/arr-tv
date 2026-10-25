@@ -12,6 +12,8 @@ import com.jim.arrtv.data.ArrSettings
 import com.jim.arrtv.data.LibraryDetails
 import com.jim.arrtv.data.MediaItem
 import com.jim.arrtv.data.MediaKind
+import com.jim.arrtv.data.PopularQuery
+import com.jim.arrtv.data.PopularTitle
 import com.jim.arrtv.data.QualityProfile
 import com.jim.arrtv.data.QueueItem
 import com.jim.arrtv.data.SearchResult
@@ -19,11 +21,13 @@ import com.jim.arrtv.data.SonarrEpisode
 import com.jim.arrtv.data.code
 import com.jim.arrtv.data.seasonName
 import com.jim.arrtv.data.SettingsStore
+import com.jim.arrtv.data.TmdbRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonObject
 import retrofit2.HttpException
 
 sealed interface Loadable<out T> {
@@ -48,6 +52,12 @@ data class AddState(
     /** The seasons to monitor and download, for a show. Starts empty, so nothing downloads unless chosen. */
     val selectedSeasons: Set<Int> = emptySet(),
     val status: AddStatus = AddStatus.Ready,
+    /**
+     * True while a popular title is being looked up in Radarr/Sonarr. Until then [result] only holds what
+     * TMDB knows, which isn't enough to add it. [lookupError] is set if the lookup fails.
+     */
+    val resolving: Boolean = false,
+    val lookupError: String? = null,
 )
 
 /** The combined Radarr + Sonarr queue. [problems] lists services that couldn't be reached. */
@@ -76,6 +86,7 @@ data class DetailState(
 class ArrViewModel(app: Application) : AndroidViewModel(app) {
     private val store = SettingsStore(app)
     private var repo = ArrRepository(store.load())
+    private var tmdb = TmdbRepository(store.load().tmdbKey)
 
     var settings by mutableStateOf(store.load())
         private set
@@ -84,12 +95,24 @@ class ArrViewModel(app: Application) : AndroidViewModel(app) {
     /** What's typed into the search box on the Movies and TV Shows tabs. Kept until the app closes. */
     val libraryFilter = mutableStateMapOf<MediaKind, String>()
 
-    var searchKind by mutableStateOf(MediaKind.MOVIE)
+    var searchKind by mutableStateOf(store.searchKind())
         private set
     var searchResults by mutableStateOf<Loadable<List<SearchResult>>>(Loadable.Idle)
         private set
     private var searchJob: Job? = null
     private var lastSearch: String? = null
+
+    /** The year filter for popular titles on the Search tab: 0 is this year, 1 last year, null any year. */
+    var popularYearsAgo by mutableStateOf(store.popularYearsAgo())
+        private set
+
+    /** The minimum TMDB rating for popular titles (out of 10), or null for any rating. */
+    var popularMinRating by mutableStateOf(store.popularMinRating())
+        private set
+
+    /** Popular lists already fetched, kept until the app closes so flipping between filters is instant. */
+    val popular = mutableStateMapOf<PopularQuery, Loadable<List<PopularTitle>>>()
+    val popularQuery get() = PopularQuery(searchKind, popularYearsAgo, popularMinRating)
 
     /** The search result currently open on the add screen, if any. */
     var adding by mutableStateOf<AddState?>(null)
@@ -109,13 +132,17 @@ class ArrViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         refresh()
+        loadPopular()
     }
 
     fun saveSettings(newSettings: ArrSettings) {
         store.save(newSettings)
         settings = store.load()
         repo = ArrRepository(settings)
+        tmdb = TmdbRepository(settings.tmdbKey)
+        popular.clear()
         refresh()
+        loadPopular()
     }
 
     fun refresh() {
@@ -287,8 +314,75 @@ class ArrViewModel(app: Application) : AndroidViewModel(app) {
     fun chooseSearchKind(kind: MediaKind) {
         if (kind == searchKind) return
         searchKind = kind
+        store.setSearchKind(kind)
         searchJob?.cancel()
         searchResults = Loadable.Idle
+        loadPopular()
+    }
+
+    fun choosePopularYear(yearsAgo: Int?) {
+        if (yearsAgo == popularYearsAgo) return
+        popularYearsAgo = yearsAgo
+        store.setPopularYearsAgo(yearsAgo)
+        loadPopular()
+    }
+
+    fun choosePopularRating(minRating: Int?) {
+        if (minRating == popularMinRating) return
+        popularMinRating = minRating
+        store.setPopularMinRating(minRating)
+        loadPopular()
+    }
+
+    /** Fetches the current popular list, unless it's already loaded (or loading). [force] retries after an error. */
+    fun loadPopular(force: Boolean = false) {
+        val query = popularQuery
+        if (!tmdb.isConfigured) {
+            popular[query] = Loadable.NotConfigured
+            return
+        }
+        val current = popular[query]
+        if (!force && (current is Loadable.Loaded || current is Loadable.Loading)) return
+        popular[query] = Loadable.Loading
+        val source = tmdb
+        viewModelScope.launch {
+            val result = load { source.popular(query) }
+            if (tmdb === source) popular[query] = result
+        }
+    }
+
+    /**
+     * Opens the add page for a popular title. It shows TMDB's details straight away, then fills in the rest
+     * once Radarr/Sonarr have looked it up.
+     */
+    fun openPopular(title: PopularTitle) {
+        val placeholder = SearchResult(
+            kind = title.kind,
+            key = title.key,
+            title = title.title,
+            subtitle = title.year?.toString().orEmpty(),
+            posterUrl = title.largePosterUrl,
+            overview = title.overview,
+            inLibrary = false,
+            seasons = emptyList(),
+            raw = JsonObject(emptyMap()),
+        )
+        if (!repo.isConfigured(title.kind)) {
+            adding = AddState(placeholder, lookupError = "Add your ${title.kind.service} address and API key in Settings.")
+            return
+        }
+        adding = AddState(placeholder, resolving = true)
+        loadProfiles(placeholder)
+        viewModelScope.launch {
+            val found = load { repo.lookup(title) }
+            updateAdding(placeholder) {
+                when {
+                    found is Loadable.Error -> it.copy(resolving = false, lookupError = "Couldn't reach ${title.kind.service}: ${found.message}")
+                    found is Loadable.Loaded && found.value != null -> it.copy(result = found.value, resolving = false)
+                    else -> it.copy(resolving = false, lookupError = "${title.kind.service} couldn't find this one.")
+                }
+            }
+        }
     }
 
     fun search(term: String) {
@@ -307,6 +401,10 @@ class ArrViewModel(app: Application) : AndroidViewModel(app) {
 
     fun openResult(result: SearchResult) {
         adding = AddState(result)
+        loadProfiles(result)
+    }
+
+    private fun loadProfiles(result: SearchResult) {
         viewModelScope.launch {
             val profiles = load { repo.qualityProfiles(result.kind) }
             val list = (profiles as? Loadable.Loaded)?.value.orEmpty()
@@ -340,6 +438,7 @@ class ArrViewModel(app: Application) : AndroidViewModel(app) {
 
     fun confirmAdd() {
         val current = adding ?: return
+        if (current.resolving || current.lookupError != null) return
         val profileId = current.selectedProfileId ?: return
         if (current.status == AddStatus.Adding || current.status == AddStatus.Added) return
         updateAdding(current.result) { it.copy(status = AddStatus.Adding) }

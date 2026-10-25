@@ -26,7 +26,8 @@ When you drive the app with `input keyevent`, check that `com.jim.arrtv` is the 
 If the app crashes, the keys go to the launcher and start other apps (it once opened Kayo).
 Don't press "Add and download", the Downloads "Remove" buttons, or any search or delete button on a detail page during testing.
 They start or delete real downloads (or files) on Jim's server. Monitoring toggles are fine if you switch them straight back.
-Send keys by name (up, down, left, right, ok, back), not raw keycodes. Keycode 23 is OK, not right, and mixing them up once started a real search.
+Send keys by name (`DPAD_UP`, `DPAD_DOWN`, `DPAD_LEFT`, `DPAD_RIGHT`, `DPAD_CENTER`, `BACK`), not raw keycodes. Keycode 23 is OK, not right, and mixing them up once started a real search.
+Short names like `up` or `right` are silently ignored.
 Detail pages open with focus on a search button, so never send ok straight after opening one.
 The add page (from a Search result) opens with focus on "Add and download", so move off it before pressing ok.
 If the TV's screensaver (`DreamActivity`) is the resumed activity, send `input keyevent KEYCODE_WAKEUP` to dismiss it. `am start` doesn't.

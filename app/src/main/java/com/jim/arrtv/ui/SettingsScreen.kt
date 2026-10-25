@@ -27,6 +27,7 @@ fun SettingsScreen(settings: ArrSettings, onSave: (ArrSettings) -> Unit) {
     var radarrKey by remember(settings) { mutableStateOf(settings.radarrKey) }
     var sonarrUrl by remember(settings) { mutableStateOf(settings.sonarrUrl) }
     var sonarrKey by remember(settings) { mutableStateOf(settings.sonarrKey) }
+    var tmdbKey by remember(settings) { mutableStateOf(settings.tmdbKey) }
 
     // Text fields come from regular Material 3 (TV Material has none), so give them a dark theme too.
     M3Theme(colorScheme = m3DarkColorScheme()) {
@@ -44,7 +45,9 @@ fun SettingsScreen(settings: ArrSettings, onSave: (ArrSettings) -> Unit) {
                 Field("Address (e.g. http://192.168.0.10:8989)", sonarrUrl) { sonarrUrl = it }
                 Field("API key", sonarrKey) { sonarrKey = it }
             }
-            Button(onClick = { onSave(ArrSettings(radarrUrl, radarrKey, sonarrUrl, sonarrKey)) }) {
+            Text("TMDB (popular titles on the Search tab)", style = MaterialTheme.typography.titleLarge)
+            Field("API key or read access token", tmdbKey) { tmdbKey = it }
+            Button(onClick = { onSave(ArrSettings(radarrUrl, radarrKey, sonarrUrl, sonarrKey, tmdbKey)) }) {
                 Text("Save")
             }
         }

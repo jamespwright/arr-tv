@@ -8,6 +8,8 @@ data class ArrSettings(
     val radarrKey: String,
     val sonarrUrl: String,
     val sonarrKey: String,
+    /** For the popular titles on the Search tab. Optional. */
+    val tmdbKey: String = "",
 ) {
     val radarrConfigured get() = radarrUrl.isNotBlank() && radarrKey.isNotBlank()
     val sonarrConfigured get() = sonarrUrl.isNotBlank() && sonarrKey.isNotBlank()
@@ -22,6 +24,7 @@ class SettingsStore(context: Context) {
         radarrKey = prefs.getString(RADARR_KEY, null) ?: BuildConfig.DEFAULT_RADARR_KEY,
         sonarrUrl = prefs.getString(SONARR_URL, null) ?: BuildConfig.DEFAULT_SONARR_URL,
         sonarrKey = prefs.getString(SONARR_KEY, null) ?: BuildConfig.DEFAULT_SONARR_KEY,
+        tmdbKey = prefs.getString(TMDB_KEY, null) ?: BuildConfig.DEFAULT_TMDB_KEY,
     )
 
     fun save(settings: ArrSettings) {
@@ -30,6 +33,7 @@ class SettingsStore(context: Context) {
             .putString(RADARR_KEY, settings.radarrKey.trim())
             .putString(SONARR_URL, settings.sonarrUrl.trim())
             .putString(SONARR_KEY, settings.sonarrKey.trim())
+            .putString(TMDB_KEY, settings.tmdbKey.trim())
             .apply()
     }
 
@@ -40,10 +44,36 @@ class SettingsStore(context: Context) {
         prefs.edit().putInt("profile_${kind.name}", id).apply()
     }
 
+    /** Which kind the Search tab was last showing. */
+    fun searchKind(): MediaKind =
+        MediaKind.entries.firstOrNull { it.name == prefs.getString(SEARCH_KIND, null) } ?: MediaKind.MOVIE
+
+    fun setSearchKind(kind: MediaKind) {
+        prefs.edit().putString(SEARCH_KIND, kind.name).apply()
+    }
+
+    /** The year filter for popular titles, as years ago (0 is this year). Null is any year. */
+    fun popularYearsAgo(): Int? = prefs.getInt(POPULAR_YEARS_AGO, -1).takeIf { it >= 0 }
+
+    fun setPopularYearsAgo(yearsAgo: Int?) {
+        prefs.edit().putInt(POPULAR_YEARS_AGO, yearsAgo ?: -1).apply()
+    }
+
+    /** The minimum TMDB rating for popular titles, out of 10. Null is any rating. */
+    fun popularMinRating(): Int? = prefs.getInt(POPULAR_MIN_RATING, -1).takeIf { it >= 0 }
+
+    fun setPopularMinRating(rating: Int?) {
+        prefs.edit().putInt(POPULAR_MIN_RATING, rating ?: -1).apply()
+    }
+
     private companion object {
         const val RADARR_URL = "radarr_url"
         const val RADARR_KEY = "radarr_key"
         const val SONARR_URL = "sonarr_url"
         const val SONARR_KEY = "sonarr_key"
+        const val TMDB_KEY = "tmdb_key"
+        const val SEARCH_KIND = "search_kind"
+        const val POPULAR_YEARS_AGO = "popular_years_ago"
+        const val POPULAR_MIN_RATING = "popular_min_rating"
     }
 }

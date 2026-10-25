@@ -63,7 +63,12 @@ fun AddScreen(
                 maxLines = if (result.seasons.isEmpty()) 7 else 3,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (result.inLibrary) {
+            if (state.resolving || state.lookupError != null) {
+                Text(state.lookupError ?: "Looking it up in ${result.kind.service}…")
+                OutlinedButton(onClick = onClose, modifier = Modifier.focusRequester(primaryFocus)) {
+                    Text(if (state.resolving) "Cancel" else "Back")
+                }
+            } else if (result.inLibrary) {
                 Text("Already in ${result.kind.service}.")
                 OutlinedButton(onClick = onClose, modifier = Modifier.focusRequester(primaryFocus)) { Text("Back") }
             } else {
@@ -121,8 +126,8 @@ fun AddScreen(
         }
     }
 
-    // Put focus on the main button whenever the button set changes (opening, or after adding).
-    LaunchedEffect(result.key, state.status == AddStatus.Added) {
+    // Put focus on the main button whenever the button set changes (opening, after a lookup, or after adding).
+    LaunchedEffect(result.key, state.resolving, state.status == AddStatus.Added) {
         runCatching { primaryFocus.requestFocus() }
     }
 }

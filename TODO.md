@@ -8,6 +8,10 @@ Jim's feedback from using the app on the TV. Tick items off (or delete them) as 
 - [x] **Deleting a show sends you back to the Search tab.** It should stay on the Movies or TV Shows grid, with focus on a nearby poster.
   Likely cause: the deleted poster had focus, so focus falls to the tab bar, and tabs switch on focus.
 
+- [x] **The episodes on a show's page are off the screen, and the page looks bunched up vertically.**
+  Done: show pages now have two panes. The show, its actions and quality are on the left. Seasons and episodes are on the right,
+  and the episode list scrolls on its own. The season chips start on the selected season.
+
 ## Performance
 
 - [x] **Switching tabs is a little laggy**, especially Search → Downloads → Movies → TV Shows → Settings.
@@ -19,11 +23,14 @@ Jim's feedback from using the app on the TV. Tick items off (or delete them) as 
 
 - [x] **Choose seasons when adding a show.** The add page should let you pick which seasons to monitor and download.
   Done: season chips on the add page (none selected to start with). New seasons are always monitored.
-- [ ] **Popular titles on the Search tab.** Before you type anything, show the most popular released movies or TV shows
-  (probably from IMDb) as poster tiles, the same as the Movies and TV Shows tabs.
-  - Year filters (e.g. this year, last year).
-  - The chosen filters are saved, so they're still set next time the app opens.
-  - **On hold (25 Oct 2026), Jim's call.** IMDb has no free API and blocks apps from reading its charts. Radarr's metadata
-    server only has a 20-movie TMDB list (no TV, no year filter). It needs a TMDB API key (or a Trakt client ID) from Jim.
+- [x] **Popular titles on the Search tab.** Before you type anything, show the most popular released movies or TV shows
+  as poster tiles, the same as the Movies and TV Shows tabs.
+  Done: TMDB's discover API, in popularity order (movies only once out on digital or Blu-ray; no news, soaps or talk
+  shows). Filters: any year / this year / last year, and any rating / 7+ / 8+. The filters and Movies/TV choice
+  are saved. The search box and filters scroll away with the posters so more of the grid fits on screen. Titles already in Radarr
+  or Sonarr say "In library". The key is in Settings, or `arr.tmdbKey` in `local.properties`.
 - [x] **Search within the Movies and TV Shows tabs**, to find something in the library quickly. The library is big.
   Done: a search button above each grid (one press up from the posters) filters it as you type.
+- [x] **Sort Movies and TV Shows by when something was last added**, like Plex.
+  Done: newest first. Shows go by their newest episode file ("Last Episode Date Added" in Plex), movies by their file's date.
+  Anything with no file yet goes by when it was added to Radarr or Sonarr, so new requests show up at the front.

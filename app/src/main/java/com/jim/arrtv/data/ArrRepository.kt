@@ -1,6 +1,7 @@
 package com.jim.arrtv.data
 
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -31,13 +32,14 @@ interface Poster {
     val posterUrl: String?
 }
 
-/** A movie or show already in Radarr/Sonarr. [id] is its id there. */
+/** A movie or show already in Radarr/Sonarr. [id] is its id there. [tmdbId] is 0 if Sonarr doesn't know it. */
 data class MediaItem(
     val kind: MediaKind,
     val id: Int,
     override val title: String,
     override val subtitle: String,
     override val posterUrl: String?,
+    val tmdbId: Int = 0,
 ) : Poster {
     override val key get() = "${kind.name}-$id"
 }
@@ -65,22 +67,45 @@ class ArrRepository(private val settings: ArrSettings) {
     }
 
     suspend fun library(kind: MediaKind): List<MediaItem> = when (kind) {
+        // Most recently downloaded first, like Plex's "Date Added". Ones with no file yet go by when they
+        // were added to Radarr. The ISO timestamps sort correctly as text.
         MediaKind.MOVIE -> radarr.movies()
-            .sortedBy { (it.sortTitle ?: it.title).lowercase() }
+            .sortedWith(
+                compareByDescending<RadarrMovie> { it.movieFile?.dateAdded ?: it.added.orEmpty() }
+                    .thenBy { (it.sortTitle ?: it.title).lowercase() },
+            )
             .map { m ->
                 val status = when {
                     m.hasFile -> "Downloaded"
                     m.monitored -> "Wanted"
                     else -> "Not monitored"
                 }
-                MediaItem(MediaKind.MOVIE, m.id, m.title, "${m.year} · $status", m.images.posterUrl(settings.radarrUrl))
+                MediaItem(MediaKind.MOVIE, m.id, m.title, "${m.year} · $status", m.images.posterUrl(settings.radarrUrl), m.tmdbId)
             }
-        MediaKind.SHOW -> sonarr.series()
-            .sortedBy { (it.sortTitle ?: it.title).lowercase() }
+        MediaKind.SHOW -> sonarr.series().let { series ->
+            val lastAdded = lastEpisodeAdded(series)
+            series.sortedWith(
+                compareByDescending<SonarrSeries> { lastAdded[it.id] ?: it.added.orEmpty() }
+                    .thenBy { (it.sortTitle ?: it.title).lowercase() },
+            )
+        }
             .map { s ->
                 val episodes = s.statistics?.let { "${it.episodeFileCount}/${it.episodeCount} episodes" } ?: ""
-                MediaItem(MediaKind.SHOW, s.id, s.title, "${s.year} · $episodes", s.images.posterUrl(settings.sonarrUrl))
+                MediaItem(MediaKind.SHOW, s.id, s.title, "${s.year} · $episodes", s.images.posterUrl(settings.sonarrUrl), s.tmdbId)
             }
+    }
+
+    /**
+     * When each show's newest episode file was imported, like Plex's "Last Episode Date Added". Sonarr's series
+     * list doesn't say, so this asks for each show's files. A show whose files can't be fetched is left out.
+     */
+    private suspend fun lastEpisodeAdded(series: List<SonarrSeries>): Map<Int, String> = coroutineScope {
+        series
+            .filter { (it.statistics?.episodeFileCount ?: 0) > 0 }
+            .map { s -> async { s.id to runCatching { sonarr.episodeFiles(s.id).mapNotNull { it.dateAdded }.maxOrNull() }.getOrNull() } }
+            .awaitAll()
+            .mapNotNull { (id, date) -> date?.let { id to it } }
+            .toMap()
     }
 
     suspend fun search(kind: MediaKind, term: String): List<SearchResult> {
@@ -89,6 +114,25 @@ class ArrRepository(private val settings: ArrSettings) {
             MediaKind.SHOW -> sonarr.lookup(term)
         }
         return results.take(MAX_RESULTS).mapIndexed { index, json -> json.toSearchResult(kind, index) }
+    }
+
+    /**
+     * Looks up a popular title in Radarr/Sonarr so it can be added. Sonarr can't map every TMDB id to its
+     * own TVDB ids, so if that finds nothing, it falls back to searching by name.
+     */
+    suspend fun lookup(title: PopularTitle): SearchResult? {
+        val byId = when (title.kind) {
+            MediaKind.MOVIE -> radarr.lookup("tmdb:${title.tmdbId}")
+            MediaKind.SHOW -> sonarr.lookup("tmdb:${title.tmdbId}")
+        }
+        val match = byId.firstOrNull() ?: when (title.kind) {
+            MediaKind.MOVIE -> radarr.lookup(title.title)
+            MediaKind.SHOW -> sonarr.lookup(title.title)
+        }.let { results ->
+            results.firstOrNull { it.int("tmdbId") == title.tmdbId }
+                ?: results.firstOrNull { it.string("title").equals(title.title, ignoreCase = true) && it.int("year") == title.year }
+        }
+        return match?.toSearchResult(title.kind, 0)?.copy(key = title.key)
     }
 
     suspend fun qualityProfiles(kind: MediaKind): List<QualityProfile> = when (kind) {
