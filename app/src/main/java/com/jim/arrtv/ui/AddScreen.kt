@@ -26,6 +26,7 @@ import androidx.tv.material3.FilterChip
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.OutlinedButton
 import androidx.tv.material3.Text
+import com.jim.arrtv.data.Release
 import com.jim.arrtv.data.seasonName
 
 @Composable
@@ -35,6 +36,7 @@ fun AddScreen(
     onToggleSeason: (Int) -> Unit,
     onToggleAllSeasons: () -> Unit,
     onAdd: () -> Unit,
+    onTrailer: () -> Unit,
     onClose: () -> Unit,
 ) {
     val result = state.result
@@ -56,6 +58,7 @@ fun AddScreen(
         ) {
             Text(result.title, style = MaterialTheme.typography.displaySmall)
             Text(result.subtitle, style = MaterialTheme.typography.titleMedium)
+            result.release?.let { ReleaseLine(it) }
             Text(
                 result.overview,
                 style = MaterialTheme.typography.bodyLarge,
@@ -65,12 +68,18 @@ fun AddScreen(
             )
             if (state.resolving || state.lookupError != null) {
                 Text(state.lookupError ?: "Looking it up in ${result.kind.service}…")
-                OutlinedButton(onClick = onClose, modifier = Modifier.focusRequester(primaryFocus)) {
-                    Text(if (state.resolving) "Cancel" else "Back")
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    OutlinedButton(onClick = onClose, modifier = Modifier.focusRequester(primaryFocus)) {
+                        Text(if (state.resolving) "Cancel" else "Back")
+                    }
+                    TrailerButton(onTrailer)
                 }
             } else if (result.inLibrary) {
                 Text("Already in ${result.kind.service}.")
-                OutlinedButton(onClick = onClose, modifier = Modifier.focusRequester(primaryFocus)) { Text("Back") }
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    OutlinedButton(onClick = onClose, modifier = Modifier.focusRequester(primaryFocus)) { Text("Back") }
+                    TrailerButton(onTrailer)
+                }
             } else {
                 Text("Quality", style = MaterialTheme.typography.titleMedium)
                 when (val profiles = state.profiles) {
@@ -110,6 +119,7 @@ fun AddScreen(
                             OutlinedButton(onClick = onClose) { Text("Cancel") }
                         }
                     }
+                    TrailerButton(onTrailer)
                 }
                 when (val status = state.status) {
                     AddStatus.Added -> Text(
@@ -130,6 +140,17 @@ fun AddScreen(
     LaunchedEffect(result.key, state.resolving, state.status == AddStatus.Added) {
         runCatching { primaryFocus.requestFocus() }
     }
+}
+
+@Composable
+fun TrailerButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    OutlinedButton(onClick = onClick, modifier = modifier) { Text("▶  Watch trailer") }
+}
+
+/** Whether a movie is on streaming yet, in its badge colour, with the dates. */
+@Composable
+fun ReleaseLine(release: Release) {
+    Text(release.description, style = MaterialTheme.typography.titleMedium, color = release.color)
 }
 
 /** Chips for choosing which seasons of a show to monitor and download. */

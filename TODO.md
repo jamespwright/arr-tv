@@ -34,3 +34,13 @@ Jim's feedback from using the app on the TV. Tick items off (or delete them) as 
 - [x] **Sort Movies and TV Shows by when something was last added**, like Plex.
   Done: newest first. Shows go by their newest episode file ("Last Episode Date Added" in Plex), movies by their file's date.
   Anything with no file yet goes by when it was added to Radarr or Sonarr, so new requests show up at the front.
+- [x] **Show which movies are out on streaming**, so it's clear which ones will actually download.
+  Done (on `feature/streaming-and-trailers`): movie posters on the Search tab, and wanted movies in the Movies tab, have a
+  badge: green "Streaming", orange "In cinemas", or grey "Coming <month>". The add and detail pages give the dates.
+  A "Show: On streaming / All releases" filter on the Search tab (saved) hides or shows the ones not out yet, for both
+  popular titles and search results. "Streaming" means a digital or physical release anywhere, from TMDB or Radarr,
+  or 90 days in cinemas with no date (as Radarr assumes).
+- [x] **Watch trailer button** on the add and detail pages, for movies and shows, that plays inside the app.
+  Done (on `feature/streaming-and-trailers`): YouTube's embedded player in a full-screen WebView. TMDB's official
+  trailers first, then Radarr's, then a YouTube search for "[title] [year] trailer". If YouTube won't let one play
+  outside its app, the next is tried. OK pauses, left/right skip 10 seconds, Back closes. Captions are off.

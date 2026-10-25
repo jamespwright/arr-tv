@@ -10,6 +10,7 @@ import okhttp3.OkHttpClient
 import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
 import retrofit2.http.GET
+import retrofit2.http.Path
 import retrofit2.http.Query
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -29,6 +30,27 @@ interface TmdbApi {
         @Query("release_date.lte") releasedBy: String,
         @Query("page") page: Int,
     ): TmdbPage
+
+    /**
+     * Every popular movie, including ones still in cinemas or not out yet. Those have few votes, so
+     * [minVotes] is only raised when filtering by rating (where a handful of votes makes a meaningless average).
+     */
+    @GET("3/discover/movie?sort_by=popularity.desc&include_adult=false")
+    suspend fun allMovies(
+        @Query("primary_release_year") year: Int?,
+        @Query("vote_average.gte") minRating: Int?,
+        @Query("vote_count.gte") minVotes: Int,
+        @Query("page") page: Int,
+    ): TmdbPage
+
+    @GET("3/movie/{id}/release_dates")
+    suspend fun releaseDates(@Path("id") id: Int): TmdbReleaseDates
+
+    @GET("3/movie/{id}/videos")
+    suspend fun movieVideos(@Path("id") id: Int): TmdbVideos
+
+    @GET("3/tv/{id}/videos")
+    suspend fun showVideos(@Path("id") id: Int): TmdbVideos
 
     // Leaves out news, soaps and talk shows, which otherwise fill the top of the list.
     @GET("3/discover/tv?sort_by=popularity.desc&include_adult=false&without_genres=10763|10766|10767&vote_count.gte=50")
@@ -56,6 +78,22 @@ data class TmdbTitle(
     val overview: String? = null,
 )
 
+/** A movie's releases in each country. Types 1-3 are premieres and cinemas, 4 is digital and 5 is physical. */
+@Serializable
+data class TmdbReleaseDates(val results: List<TmdbCountryReleases> = emptyList())
+
+@Serializable
+data class TmdbCountryReleases(@SerialName("release_dates") val releaseDates: List<TmdbReleaseDate> = emptyList())
+
+@Serializable
+data class TmdbReleaseDate(val type: Int, @SerialName("release_date") val releaseDate: String? = null)
+
+@Serializable
+data class TmdbVideos(val results: List<TmdbVideo> = emptyList())
+
+@Serializable
+data class TmdbVideo(val key: String, val site: String, val type: String, val name: String = "", val official: Boolean = false)
+
 /** A popular movie or show from TMDB. [inLibrary] is filled in from the Radarr/Sonarr library. */
 data class PopularTitle(
     val kind: MediaKind,
@@ -66,6 +104,8 @@ data class PopularTitle(
     val overview: String,
     val posterPath: String?,
     val inLibrary: Boolean = false,
+    /** For movies: whether it's out on streaming yet. Null for shows. */
+    override val release: Release? = null,
 ) : Poster {
     override val key get() = "popular-${kind.name}-$tmdbId"
     override val subtitle
@@ -79,9 +119,10 @@ data class PopularTitle(
 
 /**
  * Which popular list to show. [yearsAgo] of 0 is this year, 1 is last year, and null is any year.
- * [minRating] is out of 10, or null for any rating.
+ * [minRating] is out of 10, or null for any rating. [streamingOnly] leaves out movies still in cinemas or not
+ * out yet (it's always false for shows).
  */
-data class PopularQuery(val kind: MediaKind, val yearsAgo: Int?, val minRating: Int?)
+data class PopularQuery(val kind: MediaKind, val yearsAgo: Int?, val minRating: Int?, val streamingOnly: Boolean)
 
 class TmdbRepository(private val key: String) {
     private val api by lazy { create(key) }
@@ -93,30 +134,61 @@ class TmdbRepository(private val key: String) {
         val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
         val pages = (1..PAGES).map { page ->
             async {
-                when (query.kind) {
-                    MediaKind.MOVIE -> api.movies(year, query.minRating, today, page)
-                    MediaKind.SHOW -> api.shows(year, query.minRating, today, page)
+                when {
+                    query.kind == MediaKind.SHOW -> api.shows(year, query.minRating, today, page)
+                    query.streamingOnly -> api.movies(year, query.minRating, today, page)
+                    else -> api.allMovies(year, query.minRating, if (query.minRating != null) MIN_VOTES else 0, page)
                 }
             }
         }.awaitAll()
-        pages.flatMap { it.results }
-            .distinctBy { it.id } // a title can slip onto the next page if popularity shifts mid-load
-            .map { t ->
-                PopularTitle(
-                    kind = query.kind,
-                    tmdbId = t.id,
-                    title = t.title ?: t.name ?: "Unknown",
-                    year = (t.releaseDate ?: t.firstAirDate)?.take(4)?.toIntOrNull(),
-                    rating = t.voteAverage,
-                    overview = t.overview.orEmpty(),
-                    posterPath = t.posterPath,
-                )
-            }
+        val titles = pages.flatMap { it.results }.distinctBy { it.id } // a title can slip onto the next page if popularity shifts mid-load
+        // Discover can't say where each movie is in its release, so for the full list that's asked per movie.
+        val releases = when {
+            query.kind == MediaKind.SHOW -> emptyMap()
+            query.streamingOnly -> titles.associate { it.id to Release.Streaming }
+            else -> titles.map { t -> async { t.id to runCatching { release(t.id) }.getOrNull() } }.awaitAll().toMap()
+        }
+        titles.map { t ->
+            PopularTitle(
+                kind = query.kind,
+                tmdbId = t.id,
+                title = t.title ?: t.name ?: "Unknown",
+                year = (t.releaseDate ?: t.firstAirDate)?.take(4)?.toIntOrNull(),
+                rating = t.voteAverage,
+                overview = t.overview.orEmpty(),
+                posterPath = t.posterPath,
+                release = releases[t.id],
+            )
+        }
+    }
+
+    /** The first cinema and first digital or physical release anywhere in the world. */
+    suspend fun release(movieId: Int): Release {
+        val dates = api.releaseDates(movieId).results.flatMap { it.releaseDates }
+        fun first(vararg types: Int) = dates.filter { it.type in types }.mapNotNull { parseUtc(it.releaseDate) }.minOrNull()
+        return Release.of(cinemas = first(2, 3) ?: first(1), streaming = first(4, 5))
+    }
+
+    /**
+     * YouTube trailers, then teasers. Official ones come first, and among those, ones actually called a trailer
+     * (TMDB files sneak peeks and TV spots as trailers too).
+     */
+    suspend fun trailers(kind: MediaKind, id: Int): List<String> {
+        val videos = when (kind) {
+            MediaKind.MOVIE -> api.movieVideos(id)
+            MediaKind.SHOW -> api.showVideos(id)
+        }.results.filter { it.site == "YouTube" && (it.type == "Trailer" || it.type == "Teaser") }
+        return videos.sortedWith(
+            compareBy({ it.type != "Trailer" }, { !it.official }, { !it.name.contains("trailer", ignoreCase = true) }),
+        ).map { it.key }
     }
 
     private companion object {
         /** TMDB returns 20 titles a page. */
         const val PAGES = 3
+
+        /** The fewest votes for a rating to count, as the streaming and TV lists already ask for. */
+        const val MIN_VOTES = 50
 
         /**
          * Takes either kind of TMDB credential: the short "API key" or the long "API read access token"

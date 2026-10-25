@@ -22,6 +22,8 @@ import com.jim.arrtv.data.code
 import com.jim.arrtv.data.seasonName
 import com.jim.arrtv.data.SettingsStore
 import com.jim.arrtv.data.TmdbRepository
+import com.jim.arrtv.data.TrailerFinder
+import com.jim.arrtv.data.TrailerQuery
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -83,6 +85,14 @@ data class DetailState(
     val message: DetailMessage? = null,
 )
 
+/**
+ * The trailer playing over the current page. [videos] are YouTube ids, best first, and [index] is the one
+ * playing. The player moves on to the next if YouTube won't play one outside its own app.
+ */
+data class TrailerState(val title: String, val videos: Loadable<List<String>> = Loadable.Loading, val index: Int = 0) {
+    val videoId get() = (videos as? Loadable.Loaded)?.value?.getOrNull(index)
+}
+
 class ArrViewModel(app: Application) : AndroidViewModel(app) {
     private val store = SettingsStore(app)
     private var repo = ArrRepository(store.load())
@@ -110,9 +120,13 @@ class ArrViewModel(app: Application) : AndroidViewModel(app) {
     var popularMinRating by mutableStateOf(store.popularMinRating())
         private set
 
+    /** Whether the Search tab only shows movies already out on streaming, so they'll actually download. */
+    var streamingOnly by mutableStateOf(store.streamingOnly())
+        private set
+
     /** Popular lists already fetched, kept until the app closes so flipping between filters is instant. */
     val popular = mutableStateMapOf<PopularQuery, Loadable<List<PopularTitle>>>()
-    val popularQuery get() = PopularQuery(searchKind, popularYearsAgo, popularMinRating)
+    val popularQuery get() = PopularQuery(searchKind, popularYearsAgo, popularMinRating, streamingOnly && searchKind == MediaKind.MOVIE)
 
     /** The search result currently open on the add screen, if any. */
     var adding by mutableStateOf<AddState?>(null)
@@ -129,6 +143,11 @@ class ArrViewModel(app: Application) : AndroidViewModel(app) {
     var detail by mutableStateOf<DetailState?>(null)
         private set
     private var detailChanged = false
+
+    /** The trailer playing, if any. It opens over whichever page it was started from. */
+    var trailer by mutableStateOf<TrailerState?>(null)
+        private set
+    private var trailerJob: Job? = null
 
     init {
         refresh()
@@ -334,6 +353,35 @@ class ArrViewModel(app: Application) : AndroidViewModel(app) {
         loadPopular()
     }
 
+    fun chooseStreamingOnly(only: Boolean) {
+        if (only == streamingOnly) return
+        streamingOnly = only
+        store.setStreamingOnly(only)
+        loadPopular()
+    }
+
+    fun openTrailer(query: TrailerQuery) {
+        trailerJob?.cancel()
+        val state = TrailerState(query.title)
+        trailer = state
+        val finder = TrailerFinder(tmdb)
+        trailerJob = viewModelScope.launch {
+            val videos = load { finder.find(query) }
+            if (trailer === state) trailer = state.copy(videos = videos)
+        }
+    }
+
+    /** Tries the next trailer, after YouTube refused to play this one. */
+    fun nextTrailer(failedId: String) {
+        val current = trailer ?: return
+        if (current.videoId == failedId) trailer = current.copy(index = current.index + 1)
+    }
+
+    fun closeTrailer() {
+        trailerJob?.cancel()
+        trailer = null
+    }
+
     /** Fetches the current popular list, unless it's already loaded (or loading). [force] retries after an error. */
     fun loadPopular(force: Boolean = false) {
         val query = popularQuery
@@ -366,6 +414,8 @@ class ArrViewModel(app: Application) : AndroidViewModel(app) {
             inLibrary = false,
             seasons = emptyList(),
             raw = JsonObject(emptyMap()),
+            trailer = TrailerQuery(title.kind, title.title, title.year, title.tmdbId),
+            release = title.release,
         )
         if (!repo.isConfigured(title.kind)) {
             adding = AddState(placeholder, lookupError = "Add your ${title.kind.service} address and API key in Settings.")
@@ -378,7 +428,12 @@ class ArrViewModel(app: Application) : AndroidViewModel(app) {
             updateAdding(placeholder) {
                 when {
                     found is Loadable.Error -> it.copy(resolving = false, lookupError = "Couldn't reach ${title.kind.service}: ${found.message}")
-                    found is Loadable.Loaded && found.value != null -> it.copy(result = found.value, resolving = false)
+                    found is Loadable.Loaded && found.value != null -> {
+                        // The poster's badge came from TMDB's worldwide dates. Keep it if Radarr's differ, so
+                        // the page agrees with the badge, but take Radarr's dates when they agree.
+                        val release = found.value.release?.takeIf { r -> r.stage == title.release?.stage } ?: title.release
+                        it.copy(result = found.value.copy(release = release ?: found.value.release), resolving = false)
+                    }
                     else -> it.copy(resolving = false, lookupError = "${title.kind.service} couldn't find this one.")
                 }
             }

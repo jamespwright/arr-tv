@@ -37,6 +37,7 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.jim.arrtv.data.MediaKind
 import com.jim.arrtv.data.PopularTitle
+import com.jim.arrtv.data.ReleaseStage
 import com.jim.arrtv.data.Poster
 import com.jim.arrtv.data.SearchResult
 import androidx.compose.material3.MaterialTheme as M3Theme
@@ -81,7 +82,18 @@ fun SearchScreen(vm: ArrViewModel) {
         val owned = (library as? Loadable.Loaded)?.value.orEmpty().mapTo(HashSet()) { it.tmdbId }
         Loadable.Loaded(popular.value.map { it.copy(inLibrary = it.tmdbId in owned) })
     }
-    val content: Loadable<List<Poster>> = if (showingPopular) markedPopular else vm.searchResults
+    // Radarr's search can't filter by release, so the streaming filter is applied here.
+    val filterSearch = kind == MediaKind.MOVIE && vm.streamingOnly
+    val results = vm.searchResults
+    val shownResults = remember(results, filterSearch) {
+        if (filterSearch && results is Loadable.Loaded) {
+            Loadable.Loaded(results.value.filter { it.release?.stage == ReleaseStage.STREAMING })
+        } else {
+            results
+        }
+    }
+    val hiddenResults = ((results as? Loadable.Loaded)?.value?.size ?: 0) - ((shownResults as? Loadable.Loaded)?.value?.size ?: 0)
+    val content: Loadable<List<Poster>> = if (showingPopular) markedPopular else shownResults
 
     // A new list starts at the top.
     LaunchedEffect(showingPopular, query) { gridState.scrollToItem(0) }
@@ -102,6 +114,7 @@ fun SearchScreen(vm: ArrViewModel) {
         fullWidth("search") {
             SearchRow(vm, term, onTermChange = { term = it }, onSubmit = submit)
         }
+        if (kind == MediaKind.MOVIE) fullWidth("release") { ReleaseFilter(vm) }
         if (showingPopular) fullWidth("filters") { PopularFilters(vm) }
         status(
             state = content,
@@ -113,7 +126,12 @@ fun SearchScreen(vm: ArrViewModel) {
             } else {
                 "Add your ${kind.service} address and API key in Settings."
             },
-            emptyText = if (showingPopular) "TMDB has nothing that matches these filters." else "No matches for \"$term\".",
+            emptyText = when {
+                showingPopular -> "TMDB has nothing that matches these filters."
+                hiddenResults > 0 -> "Nothing on streaming yet matches \"$term\".\n\n" +
+                    "Choose \"All releases\" to see ${if (hiddenResults == 1) "the one" else "the $hiddenResults"} still in cinemas or coming soon."
+                else -> "No matches for \"$term\"."
+            },
         )
     }
 }
@@ -142,6 +160,20 @@ private fun SearchRow(vm: ArrViewModel, term: String, onTermChange: (String) -> 
                 modifier = Modifier.width(560.dp),
             )
         }
+    }
+}
+
+/**
+ * Whether to show only movies already out on streaming (so they'll download), or ones still in cinemas and
+ * coming soon too. Every movie poster has a badge saying which it is.
+ */
+@Composable
+private fun ReleaseFilter(vm: ArrViewModel) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Show", style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.width(4.dp))
+        FilterChip(selected = vm.streamingOnly, onClick = { vm.chooseStreamingOnly(true) }) { Text("On streaming") }
+        FilterChip(selected = !vm.streamingOnly, onClick = { vm.chooseStreamingOnly(false) }) { Text("All releases") }
     }
 }
 

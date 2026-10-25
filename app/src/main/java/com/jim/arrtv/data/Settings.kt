@@ -66,6 +66,13 @@ class SettingsStore(context: Context) {
         prefs.edit().putInt(POPULAR_MIN_RATING, rating ?: -1).apply()
     }
 
+    /** Whether the Search tab only shows movies already out on streaming. On unless turned off. */
+    fun streamingOnly(): Boolean = prefs.getBoolean(STREAMING_ONLY, true)
+
+    fun setStreamingOnly(streamingOnly: Boolean) {
+        prefs.edit().putBoolean(STREAMING_ONLY, streamingOnly).apply()
+    }
+
     private companion object {
         const val RADARR_URL = "radarr_url"
         const val RADARR_KEY = "radarr_key"
@@ -75,5 +82,6 @@ class SettingsStore(context: Context) {
         const val SEARCH_KIND = "search_kind"
         const val POPULAR_YEARS_AGO = "popular_years_ago"
         const val POPULAR_MIN_RATING = "popular_min_rating"
+        const val STREAMING_ONLY = "streaming_only"
     }
 }

@@ -171,11 +171,13 @@ private fun MovieContent(state: DetailState, details: LibraryDetails.Movie, vm: 
         )
         movie.overview?.let { Overview(it, maxLines = 5) }
         StatusLine(status, color, movie.monitored)
+        if (!movie.hasFile) ReleaseLine(movie.release)
         ItemActions(
             service = state.item.kind.service,
             searchLabel = if (movie.hasFile) "Search again" else "Search now",
             monitored = movie.monitored,
             onSearch = vm::searchDetails,
+            onTrailer = { vm.openTrailer(details.trailer) },
             onMonitor = vm::setDetailMonitored,
             onDelete = vm::deleteDetails,
         )
@@ -244,6 +246,7 @@ private fun ShowContent(state: DetailState, details: LibraryDetails.Show, vm: Ar
                 searchLabel = "Search for missing episodes",
                 monitored = series.monitored,
                 onSearch = vm::searchDetails,
+                onTrailer = { vm.openTrailer(details.trailer) },
                 onMonitor = vm::setDetailMonitored,
                 onDelete = vm::deleteDetails,
                 vertical = true,
@@ -311,13 +314,14 @@ private fun StatusLine(status: String, color: Color, monitored: Boolean) {
     )
 }
 
-/** Search, monitor and delete, with delete asking first. Focus starts on search. [vertical] stacks the buttons. */
+/** Search, trailer, monitor and delete, with delete asking first. Focus starts on search. [vertical] stacks the buttons. */
 @Composable
 private fun ItemActions(
     service: String,
     searchLabel: String,
     monitored: Boolean,
     onSearch: () -> Unit,
+    onTrailer: () -> Unit,
     onMonitor: (Boolean) -> Unit,
     onDelete: (deleteFiles: Boolean) -> Unit,
     vertical: Boolean = false,
@@ -332,6 +336,7 @@ private fun ItemActions(
     if (!confirming) {
         ButtonGroup(vertical) {
             Button(onClick = onSearch, modifier = wide.focusRequester(searchFocus)) { Text(searchLabel) }
+            TrailerButton(onTrailer, wide)
             OutlinedButton(onClick = { onMonitor(!monitored) }, modifier = wide) {
                 Text(if (monitored) "Stop monitoring" else "Start monitoring")
             }

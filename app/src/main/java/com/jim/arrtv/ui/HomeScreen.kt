@@ -117,6 +117,7 @@ fun HomeScreen(vm: ArrViewModel) {
                     onToggleSeason = vm::toggleSeason,
                     onToggleAllSeasons = vm::toggleAllSeasons,
                     onAdd = vm::confirmAdd,
+                    onTrailer = { vm.openTrailer(state.result.trailer) },
                     onClose = vm::closeResult,
                 )
             }
@@ -134,6 +135,13 @@ fun HomeScreen(vm: ArrViewModel) {
     vm.detail?.let { state ->
         Dialog(onDismissRequest = vm::closeDetails, properties = DialogProperties(usePlatformDefaultWidth = false)) {
             Surface(Modifier.fillMaxSize()) { DetailScreen(state, vm) }
+        }
+    }
+
+    // Last, so it opens over the add or detail page it was started from. Back returns to that page.
+    vm.trailer?.let { state ->
+        Dialog(onDismissRequest = vm::closeTrailer, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+            TrailerScreen(state, onFailed = vm::nextTrailer, onClose = vm::closeTrailer)
         }
     }
 }

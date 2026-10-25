@@ -30,6 +30,9 @@ interface Poster {
     val title: String
     val subtitle: String
     val posterUrl: String?
+
+    /** For movies: whether it's out on streaming yet, shown as a badge on the poster. Null for no badge. */
+    val release: Release? get() = null
 }
 
 /** A movie or show already in Radarr/Sonarr. [id] is its id there. [tmdbId] is 0 if Sonarr doesn't know it. */
@@ -40,6 +43,8 @@ data class MediaItem(
     override val subtitle: String,
     override val posterUrl: String?,
     val tmdbId: Int = 0,
+    /** Only for movies that haven't downloaded yet, to show whether they can. */
+    override val release: Release? = null,
 ) : Poster {
     override val key get() = "${kind.name}-$id"
 }
@@ -55,6 +60,9 @@ data class SearchResult(
     /** Season numbers for a show, in order. 0 is specials. Empty for movies. */
     val seasons: List<Int>,
     val raw: JsonObject,
+    val trailer: TrailerQuery,
+    /** For movies: whether it's out on streaming yet. */
+    override val release: Release? = null,
 ) : Poster
 
 class ArrRepository(private val settings: ArrSettings) {
@@ -80,7 +88,10 @@ class ArrRepository(private val settings: ArrSettings) {
                     m.monitored -> "Wanted"
                     else -> "Not monitored"
                 }
-                MediaItem(MediaKind.MOVIE, m.id, m.title, "${m.year} · $status", m.images.posterUrl(settings.radarrUrl), m.tmdbId)
+                MediaItem(
+                    MediaKind.MOVIE, m.id, m.title, "${m.year} · $status", m.images.posterUrl(settings.radarrUrl), m.tmdbId,
+                    release = if (m.hasFile) null else m.release,
+                )
             }
         MediaKind.SHOW -> sonarr.series().let { series ->
             val lastAdded = lastEpisodeAdded(series)
@@ -271,16 +282,26 @@ class ArrRepository(private val settings: ArrSettings) {
         // Sonarr reports tmdbId as 0 for many shows, so use the id each service actually keys on,
         // plus the index, which keeps the key unique even if an id is missing.
         val externalId = string(if (kind == MediaKind.MOVIE) "tmdbId" else "tvdbId")
+        val title = string("title") ?: "Unknown"
         return SearchResult(
             kind = kind,
             key = "${kind.name}-$index-$externalId",
-            title = string("title") ?: "Unknown",
+            title = title,
             subtitle = listOfNotNull(year.takeIf { it > 0 }?.toString(), detail).joinToString(" · "),
             posterUrl = (string("remotePoster") ?: posterFromImages())?.let(::smallerPoster),
             overview = string("overview") ?: "",
             inLibrary = inLibrary,
             seasons = this["seasons"]?.jsonArray.orEmpty().mapNotNull { (it as? JsonObject)?.int("seasonNumber") }.sorted(),
             raw = this,
+            trailer = TrailerQuery(kind, title, year, int("tmdbId") ?: 0, string("youTubeTrailerId")),
+            release = if (kind == MediaKind.MOVIE) {
+                Release.of(
+                    cinemas = parseUtc(string("inCinemas")),
+                    streaming = listOfNotNull(parseUtc(string("digitalRelease")), parseUtc(string("physicalRelease"))).minOrNull(),
+                )
+            } else {
+                null
+            },
         )
     }
 

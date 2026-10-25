@@ -22,7 +22,18 @@ data class MovieDetails(
     val isAvailable: Boolean = true,
     val qualityProfileId: Int = 0,
     val movieFile: MediaFile? = null,
-)
+    val tmdbId: Int = 0,
+    val youTubeTrailerId: String? = null,
+    val inCinemas: String? = null,
+    val digitalRelease: String? = null,
+    val physicalRelease: String? = null,
+) {
+    val release
+        get() = Release.of(
+            cinemas = parseUtc(inCinemas),
+            streaming = listOfNotNull(parseUtc(digitalRelease), parseUtc(physicalRelease)).minOrNull(),
+        )
+}
 
 @Serializable
 data class MediaFile(val size: Double = 0.0, val quality: QueueQuality? = null)
@@ -40,6 +51,7 @@ data class SeriesDetails(
     val qualityProfileId: Int = 0,
     val seasons: List<SeasonInfo> = emptyList(),
     val statistics: SeriesStatistics? = null,
+    val tmdbId: Int = 0,
 )
 
 @Serializable
@@ -79,11 +91,17 @@ data class EpisodeMonitor(val episodeIds: List<Int>, val monitored: Boolean)
  */
 sealed interface LibraryDetails {
     val raw: JsonObject
+    val trailer: TrailerQuery
 
-    data class Movie(override val raw: JsonObject, val movie: MovieDetails) : LibraryDetails
+    data class Movie(override val raw: JsonObject, val movie: MovieDetails) : LibraryDetails {
+        override val trailer
+            get() = TrailerQuery(MediaKind.MOVIE, movie.title, movie.year, movie.tmdbId, movie.youTubeTrailerId)
+    }
 
     data class Show(override val raw: JsonObject, val series: SeriesDetails, val episodes: List<SonarrEpisode>) :
-        LibraryDetails
+        LibraryDetails {
+        override val trailer get() = TrailerQuery(MediaKind.SHOW, series.title, series.year, series.tmdbId)
+    }
 }
 
 fun formatSize(bytes: Double): String {
