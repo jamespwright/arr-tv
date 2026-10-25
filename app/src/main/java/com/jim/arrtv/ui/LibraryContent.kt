@@ -12,10 +12,19 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
@@ -82,19 +91,43 @@ fun Message(text: String) {
 
 @Composable
 fun <T : Poster> PosterGrid(items: List<T>, onClick: (T) -> Unit) {
+    val focusRequesters = remember { mutableMapOf<String, FocusRequester>() }
+    var focusedKey by remember { mutableStateOf<String?>(null) }
+    var focusedIndex by remember { mutableIntStateOf(0) }
+
+    // If the focused poster disappears (it was just deleted), focus would otherwise drop out of the grid
+    // and the next key press would land on the tab bar. Move it to whatever now sits in that spot.
+    LaunchedEffect(items) {
+        val key = focusedKey ?: return@LaunchedEffect
+        if (items.isEmpty() || items.any { it.key == key }) return@LaunchedEffect
+        val next = items[focusedIndex.coerceAtMost(items.lastIndex)]
+        runCatching { focusRequesters[next.key]?.requestFocus() }
+    }
+
     LazyVerticalGrid(
         columns = GridCells.Adaptive(150.dp),
         horizontalArrangement = Arrangement.spacedBy(20.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
-        items(items, key = { it.key }) { item -> PosterCard(item) { onClick(item) } }
+        itemsIndexed(items, key = { _, item -> item.key }) { index, item ->
+            val requester = focusRequesters.getOrPut(item.key) { FocusRequester() }
+            PosterCard(
+                item,
+                Modifier.focusRequester(requester).onFocusChanged {
+                    if (it.isFocused) {
+                        focusedKey = item.key
+                        focusedIndex = index
+                    }
+                },
+            ) { onClick(item) }
+        }
     }
 }
 
 @Composable
-private fun PosterCard(item: Poster, onClick: () -> Unit) {
+private fun PosterCard(item: Poster, modifier: Modifier, onClick: () -> Unit) {
     Column {
-        Card(onClick = onClick, modifier = Modifier.fillMaxWidth().aspectRatio(2f / 3f)) {
+        Card(onClick = onClick, modifier = modifier.fillMaxWidth().aspectRatio(2f / 3f)) {
             PosterImage(item.posterUrl, item.title)
         }
         Text(

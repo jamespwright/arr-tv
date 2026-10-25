@@ -4,8 +4,8 @@ Jim's feedback from using the app on the TV. Tick items off (or delete them) as 
 
 ## Bugs
 
-- [ ] **Going back up to the tab bar always lands on Settings.** It should land on the tab you're on (e.g. Downloads).
-- [ ] **Deleting a show sends you back to the Search tab.** It should stay on the Movies or TV Shows grid, with focus on a nearby poster.
+- [x] **Going back up to the tab bar always lands on Settings.** It should land on the tab you're on (e.g. Downloads).
+- [x] **Deleting a show sends you back to the Search tab.** It should stay on the Movies or TV Shows grid, with focus on a nearby poster.
   Likely cause: the deleted poster had focus, so focus falls to the tab bar, and tabs switch on focus.
 
 ## Performance
