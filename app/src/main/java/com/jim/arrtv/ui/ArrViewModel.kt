@@ -45,8 +45,8 @@ data class AddState(
     val result: SearchResult,
     val profiles: Loadable<List<QualityProfile>> = Loadable.Loading,
     val selectedProfileId: Int? = null,
-    /** The seasons to monitor and download, for a show. Starts as every season except specials. */
-    val selectedSeasons: Set<Int> = result.seasons.filter { it > 0 }.toSet(),
+    /** The seasons to monitor and download, for a show. Starts empty, so nothing downloads unless chosen. */
+    val selectedSeasons: Set<Int> = emptySet(),
     val status: AddStatus = AddStatus.Ready,
 )
 

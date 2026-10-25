@@ -18,7 +18,7 @@ Jim's feedback from using the app on the TV. Tick items off (or delete them) as 
 ## Features
 
 - [x] **Choose seasons when adding a show.** The add page should let you pick which seasons to monitor and download.
-  Done: season chips on the add page (every season except specials to start with). New seasons are always monitored.
+  Done: season chips on the add page (none selected to start with). New seasons are always monitored.
 - [ ] **Popular titles on the Search tab.** Before you type anything, show the most popular released movies or TV shows
   (probably from IMDb) as poster tiles, the same as the Movies and TV Shows tabs.
   - Year filters (e.g. this year, last year).
