@@ -12,6 +12,12 @@ Jim's feedback from using the app on the TV. Tick items off (or delete them) as 
   Done: show pages now have two panes. The show, its actions and quality are on the left. Seasons and episodes are on the right,
   and the episode list scrolls on its own. The season chips start on the selected season.
 
+- [x] **Search's "Top rated" list was short, and "Title A–Z" got jumbled further down.**
+  Top rated only counted shows with 50+ votes, and TMDB sorts names by their original language ("Dudes" under A for
+  Alphamännchen) and stops at 10,000. Done: Top rated, Newest and A–Z (and any platform-limited list) now load the whole
+  filtered list and sort it on the TV, so every title is there in the right order. Shows with no filters take about 45s.
+  Top rated goes strictly by the ★ shown (most votes first among equals). TV shows are English-language only, which leaves out most of the obscure 9s and 10s. Most popular still loads page by page. Movies with no filters (100,000+) ask for a filter.
+
 ## Performance
 
 - [x] **Switching tabs is a little laggy**, especially Search → Downloads → Movies → TV Shows → Settings.
@@ -55,3 +61,8 @@ Jim's feedback from using the app on the TV. Tick items off (or delete them) as 
   so 2024+ stays 2024+ next year.
 - [x] **Popular shows with few TMDB votes were missing** (The Secret Lives of Mormon Wives, on Disney+ with Reality
   chosen). The lists asked for at least 50 votes. Now it's 10, or 50 only when filtering by rating.
+- [x] **Only bring up the keyboard when you press OK on a search box.**
+  Done: one search box (`ui/SearchBox.kt`) on the Search, Movies and TV Shows tabs. Moving onto it just highlights it, and
+  OK starts typing. One Back (or the keyboard's search key) hides the keyboard and stops typing, with focus left on the box.
+  A Clear button sits next to it whenever there's text. Down from the Movies or TV Shows tab lands on the search box, not the
+  first poster. (A blue glow and widening box while typing were tried and taken out: too much.)

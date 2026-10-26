@@ -1,25 +1,16 @@
 package com.jim.arrtv.ui
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.LazyGridScope
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.withFrameNanos
-import androidx.compose.ui.focus.focusProperties
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.text.input.ImeAction
-import androidx.tv.material3.OutlinedButton
-import androidx.compose.material3.MaterialTheme as M3Theme
-import androidx.compose.material3.darkColorScheme as m3DarkColorScheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -37,8 +28,8 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -72,10 +63,8 @@ fun LibraryContent(vm: ArrViewModel, kind: MediaKind) {
 }
 
 /**
- * The library poster grid with a search box above it. Pressing down from the tab bar still lands on the
- * posters. The search button is one press up from them.
+ * The library poster grid with a search box above it. Pressing down from the tab bar lands on the search box.
  */
-@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun LibraryGrid(
     items: List<MediaItem>,
@@ -84,12 +73,10 @@ private fun LibraryGrid(
     onFilterChange: (String) -> Unit,
     onOpen: (MediaItem) -> Unit,
 ) {
-    var editing by remember { mutableStateOf(false) }
-    val fieldFocus = remember { FocusRequester() }
+    val search = remember { SearchBoxState() }
     val gridFocus = remember { FocusRequester() }
     val gridState = rememberLazyGridState()
-    val keyboard = LocalSoftwareKeyboardController.current
-    // Set when the focused button or text field is about to disappear, so focus doesn't drop to the tab bar.
+    // Set when the focused search box or Clear button is about to disappear, so focus doesn't drop to the tab bar.
     var jumpToGrid by remember { mutableStateOf(false) }
 
     val query = remember(filter) { searchKey(filter) }
@@ -98,7 +85,6 @@ private fun LibraryGrid(
     }
 
     LaunchedEffect(query) { gridState.scrollToItem(0) }
-    LaunchedEffect(editing) { if (editing) runCatching { fieldFocus.requestFocus() } }
     LaunchedEffect(jumpToGrid) {
         if (jumpToGrid) {
             withFrameNanos {} // let the row update first
@@ -107,54 +93,32 @@ private fun LibraryGrid(
         }
     }
 
-    Column(
-        Modifier
-            // A focus request for the text field also counts as entering, so only redirect when not typing.
-            .focusProperties { enter = { if (editing || shown.isEmpty()) FocusRequester.Default else gridFocus } }
-            .focusGroup(),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            if (editing) {
-                var hadFocus by remember { mutableStateOf(false) }
-                M3Theme(colorScheme = m3DarkColorScheme()) {
-                    OutlinedTextField(
-                        value = filter,
-                        onValueChange = onFilterChange,
-                        label = { androidx.compose.material3.Text("Search ${kind.label.lowercase()}") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                        keyboardActions = KeyboardActions(onSearch = {
-                            keyboard?.hide()
-                            editing = false
-                            jumpToGrid = shown.isNotEmpty()
-                        }),
-                        modifier = Modifier
-                            .width(560.dp)
-                            .focusRequester(fieldFocus)
-                            .onFocusChanged {
-                                if (it.isFocused) hadFocus = true else if (hadFocus) editing = false
-                            },
-                    )
-                }
-            } else {
-                OutlinedButton(onClick = { editing = true }) {
-                    Text(if (filter.isBlank()) "Search ${kind.label.lowercase()}" else "Search: \u201c$filter\u201d")
-                }
-                if (filter.isNotBlank()) {
-                    OutlinedButton(onClick = {
-                        onFilterChange("")
-                        jumpToGrid = true
-                    }) { Text("Clear") }
-                }
-            }
+    Column {
+        SearchBox(
+            value = filter,
+            onValueChange = onFilterChange,
+            placeholder = "Search ${kind.label.lowercase()}",
+            onSearch = { jumpToGrid = shown.isNotEmpty() },
+            state = search,
+            refocusAfterSearch = shown.isEmpty(),
+            onClear = { jumpToGrid = true },
+        ) {
             if (query.isNotEmpty()) Text("${shown.size} of ${items.size}", style = MaterialTheme.typography.bodyMedium)
         }
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(8.dp))
         if (shown.isEmpty()) {
             Message("Nothing in ${kind.service} matches \u201c$filter\u201d.")
         } else {
             // While typing, the grid mustn't pull focus out of the text field when the poster it last had disappears.
-            PosterGrid(shown, onClick = onOpen, modifier = Modifier.focusRequester(gridFocus), state = gridState, keepFocus = !editing)
+            PosterGrid(
+                shown,
+                onClick = onOpen,
+                modifier = Modifier.focusRequester(gridFocus),
+                state = gridState,
+                keepFocus = !search.editing,
+                // Room for the focused poster in the top row to grow without being cut off.
+                contentPadding = PaddingValues(top = 12.dp),
+            )
         }
     }
 }
@@ -194,6 +158,9 @@ fun Message(text: String) {
     }
 }
 
+/** About two rows of posters. */
+private const val NEAR_END_ITEMS = 12
+
 @Composable
 fun <T : Poster> PosterGrid(
     items: List<T>,
@@ -201,6 +168,9 @@ fun <T : Poster> PosterGrid(
     modifier: Modifier = Modifier,
     state: LazyGridState = rememberLazyGridState(),
     keepFocus: Boolean = true,
+    contentPadding: PaddingValues = PaddingValues(),
+    /** Called when the last few posters are on screen or close to it, and again if more arrive and it's still near. */
+    onNearEnd: (() -> Unit)? = null,
     /** Full-width rows above the posters, which scroll away with them. */
     header: LazyGridScope.() -> Unit = {},
 ) {
@@ -219,10 +189,19 @@ fun <T : Poster> PosterGrid(
         runCatching { focusRequesters[next.key]?.requestFocus() }
     }
 
+    val nearEnd by rememberUpdatedState(onNearEnd)
+    LaunchedEffect(state) {
+        snapshotFlow { state.layoutInfo.let { it.visibleItemsInfo.lastOrNull()?.index to it.totalItemsCount } }
+            .collect { (last, total) ->
+                if (last != null && total > 0 && last >= total - NEAR_END_ITEMS) nearEnd?.invoke()
+            }
+    }
+
     LazyVerticalGrid(
         columns = GridCells.Adaptive(150.dp),
         modifier = modifier,
         state = state,
+        contentPadding = contentPadding,
         horizontalArrangement = Arrangement.spacedBy(20.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {

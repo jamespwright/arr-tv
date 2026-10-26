@@ -38,7 +38,8 @@ Jim's bug reports and feature requests are in `TODO.md`. Add new ones there.
 ## Layout
 - `data/`: settings storage, the API client and models, `Details.kt` (full movie/series/episode records), and `Queue.kt` (groups queue records per download and works out status labels)
 - `ui/`: the ViewModel and Compose screens (tabs: Search, Downloads, Movies, TV Shows, Settings).
-  Movies and TV Shows have a search box above the grid that filters it (`LibraryContent.kt`).
+  Movies and TV Shows have a search box above the grid that filters it (`LibraryContent.kt`). All search boxes are `SearchBox.kt`,
+  which only brings up the keyboard when you press OK.
   Selecting a poster in Movies or TV Shows opens `DetailScreen` (status, search, monitoring, quality, delete, and seasons and episodes for shows).
 - `data/Release.kt` works out whether a movie is on streaming yet (the Search tab's "On streaming" filter and the line on movie pages).
 - Trailers: `data/Trailers.kt` finds YouTube ids (TMDB, then Radarr, then a YouTube search). `ui/TrailerScreen.kt` plays them

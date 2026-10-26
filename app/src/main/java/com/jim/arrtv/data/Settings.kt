@@ -62,6 +62,13 @@ class SettingsStore(context: Context) {
         prefs.edit().putInt(POPULAR_FROM_YEAR, year ?: -1).apply()
     }
 
+    /** For shows, the year they must have first aired in or after. Null is any year. */
+    fun popularStartedYear(): Int? = prefs.getInt(POPULAR_STARTED_YEAR, -1).takeIf { it > 0 }
+
+    fun setPopularStartedYear(year: Int?) {
+        prefs.edit().putInt(POPULAR_STARTED_YEAR, year ?: -1).apply()
+    }
+
     /** The minimum TMDB rating for popular titles, out of 10. Null is any rating. */
     fun popularMinRating(): Int? = prefs.getInt(POPULAR_MIN_RATING, -1).takeIf { it >= 0 }
 
@@ -108,6 +115,7 @@ class SettingsStore(context: Context) {
         const val TMDB_KEY = "tmdb_key"
         const val SEARCH_KIND = "search_kind"
         const val POPULAR_FROM_YEAR = "popular_from_year"
+        const val POPULAR_STARTED_YEAR = "popular_started_year"
         const val POPULAR_MIN_RATING = "popular_min_rating"
         const val STREAMING_ONLY = "streaming_only"
         const val POPULAR_SORT = "popular_sort"

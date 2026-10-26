@@ -24,13 +24,17 @@ import com.jim.arrtv.data.code
 import com.jim.arrtv.data.seasonName
 import com.jim.arrtv.data.SettingsStore
 import com.jim.arrtv.data.TmdbRepository
+import com.jim.arrtv.data.TooManyTitles
+import com.jim.arrtv.data.arrangedBy
 import com.jim.arrtv.data.TrailerFinder
 import com.jim.arrtv.data.TrailerQuery
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 import retrofit2.HttpException
 
@@ -38,8 +42,17 @@ sealed interface Loadable<out T> {
     data object Idle : Loadable<Nothing>
     data object NotConfigured : Loadable<Nothing>
     data object Loading : Loadable<Nothing>
-    data class Error(val message: String) : Loadable<Nothing>
+    /** [plain] messages are shown as they are, rather than as the service being unreachable. */
+    data class Error(val message: String, val plain: Boolean = false) : Loadable<Nothing>
     data class Loaded<T>(val value: T) : Loadable<T>
+}
+
+fun <T, R> Loadable<T>.map(transform: (T) -> R): Loadable<R> = when (this) {
+    is Loadable.Loaded -> Loadable.Loaded(transform(value))
+    is Loadable.Error -> this
+    Loadable.Idle -> Loadable.Idle
+    Loadable.NotConfigured -> Loadable.NotConfigured
+    Loadable.Loading -> Loadable.Loading
 }
 
 sealed interface AddStatus {
@@ -88,6 +101,17 @@ data class DetailState(
 )
 
 /**
+ * The popular titles loaded so far for one set of filters. More are added on the end as the grid nears it, and
+ * the ones already there never move, so what's on screen stays put. [nextPage] is the next TMDB page to ask for.
+ */
+data class PopularList(
+    val titles: List<PopularTitle>,
+    val nextPage: Int,
+    val hasMore: Boolean,
+    val loadingMore: Boolean = false,
+)
+
+/**
  * The trailer playing over the current page. [videos] are YouTube ids, best first, and [index] is the one
  * playing. The player moves on to the next if YouTube won't play one outside its own app.
  */
@@ -118,6 +142,10 @@ class ArrViewModel(app: Application) : AndroidViewModel(app) {
     var popularFromYear by mutableStateOf(store.popularFromYear())
         private set
 
+    /** For shows, the year they first aired in or after, or null for any year. */
+    var popularStartedYear by mutableStateOf(store.popularStartedYear())
+        private set
+
     /** The minimum TMDB rating for popular titles (out of 10), or null for any rating. */
     var popularMinRating by mutableStateOf(store.popularMinRating())
         private set
@@ -126,7 +154,7 @@ class ArrViewModel(app: Application) : AndroidViewModel(app) {
     var streamingOnly by mutableStateOf(store.streamingOnly())
         private set
 
-    /** How the popular titles are arranged. It only reorders them, so nothing has to be fetched. */
+    /** How the popular titles are arranged. TMDB sorts them, so changing it fetches a new list. */
     var popularSort by mutableStateOf(store.popularSort())
         private set
 
@@ -140,8 +168,20 @@ class ArrViewModel(app: Application) : AndroidViewModel(app) {
     var popularPlatform by mutableStateOf(store.popularPlatform())
         private set
 
-    /** Popular lists already fetched, kept until the app closes so flipping between filters is instant. */
-    val popular = mutableStateMapOf<PopularQuery, Loadable<List<PopularTitle>>>()
+    /** Most popular lists already fetched, kept until the app closes so flipping between filters is instant. */
+    val popular = mutableStateMapOf<PopularQuery, Loadable<PopularList>>()
+
+    /**
+     * Whole lists (see [PopularQuery.loadsAll]) under [PopularQuery.allKey], already in every arrangement so
+     * switching between them is instant. Kept until the app closes too.
+     */
+    val popularAll = mutableStateMapOf<PopularQuery, Loadable<Map<PopularSort, List<PopularTitle>>>>()
+
+    /** How far the whole list that's loading has got: titles arrived, and how many there are. */
+    val popularAllProgress = mutableStateMapOf<PopularQuery, Pair<Int, Int>>()
+    private var allJob: Job? = null
+    private var allLoading: PopularQuery? = null
+
     val popularQuery
         get() = PopularQuery(
             searchKind,
@@ -150,6 +190,8 @@ class ArrViewModel(app: Application) : AndroidViewModel(app) {
             streamingOnly && searchKind == MediaKind.MOVIE,
             popularGenre,
             popularPlatform,
+            popularStartedYear.takeIf { searchKind == MediaKind.SHOW },
+            popularSort,
         )
 
     /** The search result currently open on the add screen, if any. */
@@ -184,6 +226,9 @@ class ArrViewModel(app: Application) : AndroidViewModel(app) {
         repo = ArrRepository(settings)
         tmdb = TmdbRepository(settings.tmdbKey)
         popular.clear()
+        allJob?.cancel()
+        popularAll.clear()
+        popularAllProgress.clear()
         refresh()
         loadPopular()
     }
@@ -370,6 +415,13 @@ class ArrViewModel(app: Application) : AndroidViewModel(app) {
         loadPopular()
     }
 
+    fun choosePopularStartedYear(year: Int?) {
+        if (year == popularStartedYear) return
+        popularStartedYear = year
+        store.setPopularStartedYear(year)
+        loadPopular()
+    }
+
     fun choosePopularRating(minRating: Int?) {
         if (minRating == popularMinRating) return
         popularMinRating = minRating
@@ -388,6 +440,7 @@ class ArrViewModel(app: Application) : AndroidViewModel(app) {
         if (sort == popularSort) return
         popularSort = sort
         store.setPopularSort(sort)
+        loadPopular()
     }
 
     fun choosePopularGenre(genre: Int?) {
@@ -426,9 +479,13 @@ class ArrViewModel(app: Application) : AndroidViewModel(app) {
         trailer = null
     }
 
-    /** Fetches the current popular list, unless it's already loaded (or loading). [force] retries after an error. */
+    /**
+     * Fetches the current popular list (its first batch, for most popular), unless it's already loaded (or
+     * loading). [force] retries after an error.
+     */
     fun loadPopular(force: Boolean = false) {
         val query = popularQuery
+        if (query.loadsAll) return loadAllPopular(query.allKey, force)
         if (!tmdb.isConfigured) {
             popular[query] = Loadable.NotConfigured
             return
@@ -438,8 +495,89 @@ class ArrViewModel(app: Application) : AndroidViewModel(app) {
         popular[query] = Loadable.Loading
         val source = tmdb
         viewModelScope.launch {
-            val result = load { source.popular(query) }
-            if (tmdb === source) popular[query] = result
+            val result = load { source.popular(query, 1..TmdbRepository.FIRST_PAGES) }
+            if (tmdb !== source) return@launch
+            popular[query] = when (result) {
+                is Loadable.Loaded -> Loadable.Loaded(
+                    PopularList(result.value.titles, TmdbRepository.FIRST_PAGES + 1, result.value.hasMore),
+                )
+                is Loadable.Error -> result
+                else -> Loadable.Loading
+            }
+        }
+    }
+
+    private fun loadAllPopular(key: PopularQuery, force: Boolean) {
+        if (!tmdb.isConfigured) {
+            popularAll[key] = Loadable.NotConfigured
+            return
+        }
+        val current = popularAll[key]
+        if (!force && (current is Loadable.Loaded || current is Loadable.Loading)) return
+        // Only one whole list loads at a time, as one can be hundreds of pages. A list left half-loaded starts
+        // again when it's next shown.
+        allJob?.cancel()
+        allLoading?.let {
+            popularAll.remove(it)
+            popularAllProgress.remove(it)
+        }
+        popularAll[key] = Loadable.Loading
+        allLoading = key
+        val source = tmdb
+        allJob = viewModelScope.launch {
+            val result = try {
+                val titles = source.all(key) { loaded, total -> popularAllProgress[key] = loaded to total }
+                val arranged = withContext(Dispatchers.Default) {
+                    PopularSort.entries.associateWith { titles.arrangedBy(it) }
+                }
+                Loadable.Loaded(arranged)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: TooManyTitles) {
+                Loadable.Error(e.message.orEmpty(), plain = true)
+            } catch (e: Exception) {
+                Loadable.Error(e.describe())
+            }
+            if (tmdb !== source) return@launch
+            popularAll[key] = result
+            popularAllProgress.remove(key)
+            allLoading = null
+        }
+    }
+
+    /**
+     * Adds the next batch to the current popular list, when the grid is nearing its end. It goes on the end of
+     * the list of the filters it was asked for, whichever are showing by the time it arrives, and titles already
+     * there are skipped, so nothing shifts under the cursor.
+     */
+    fun loadMorePopular() {
+        val query = popularQuery
+        if (query.loadsAll) return
+        val source = tmdb
+        val start = (popular[query] as? Loadable.Loaded)?.value ?: return
+        if (start.loadingMore || !start.hasMore) return
+        popular[query] = Loadable.Loaded(start.copy(loadingMore = true))
+        viewModelScope.launch {
+            var list = start
+            // A batch can be all repeats (a title moving up a page), which would leave the grid with nothing new
+            // to scroll to and so never ask again. Go on to the next batch until something is added.
+            repeat(MAX_EMPTY_BATCHES) {
+                val pages = list.nextPage until list.nextPage + TmdbRepository.MORE_PAGES
+                val result = load { source.popular(query, pages) }
+                if (tmdb !== source) return@launch
+                if (result !is Loadable.Loaded) {
+                    popular[query] = Loadable.Loaded(list.copy(loadingMore = false))
+                    return@launch
+                }
+                val known = list.titles.mapTo(HashSet()) { it.tmdbId }
+                val added = result.value.titles.filter { known.add(it.tmdbId) }
+                list = list.copy(titles = list.titles + added, nextPage = pages.last + 1, hasMore = result.value.hasMore)
+                if (added.isNotEmpty() || !list.hasMore) {
+                    popular[query] = Loadable.Loaded(list.copy(loadingMore = false))
+                    return@launch
+                }
+            }
+            popular[query] = Loadable.Loaded(list.copy(loadingMore = false))
         }
     }
 
@@ -476,7 +614,15 @@ class ArrViewModel(app: Application) : AndroidViewModel(app) {
                         // The poster's badge came from TMDB's worldwide dates. Keep it if Radarr's differ, so
                         // the page agrees with the badge, but take Radarr's dates when they agree.
                         val release = found.value.release?.takeIf { r -> r.stage == title.release?.stage } ?: title.release
-                        it.copy(result = found.value.copy(release = release ?: found.value.release), resolving = false)
+                        // Keep TMDB's poster, title and description too. Sonarr's come from TheTVDB and are often
+                        // different, so they'd swap under you a moment after the page opens. (Adding sends Sonarr's own record.)
+                        val shown = found.value.copy(
+                            title = placeholder.title,
+                            overview = placeholder.overview.ifBlank { found.value.overview },
+                            posterUrl = placeholder.posterUrl ?: found.value.posterUrl,
+                            release = release ?: found.value.release,
+                        )
+                        it.copy(result = shown, resolving = false)
                     }
                     else -> it.copy(resolving = false, lookupError = "${title.kind.service} couldn't find this one.")
                 }
@@ -586,6 +732,8 @@ class ArrViewModel(app: Application) : AndroidViewModel(app) {
         }
 
     private companion object {
+        /** How many batches of nothing but repeats to skip past before giving up for now. */
+        const val MAX_EMPTY_BATCHES = 5
         const val SEARCHING = "Starting search…"
     }
 }

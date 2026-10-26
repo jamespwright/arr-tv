@@ -3,6 +3,7 @@ package com.jim.arrtv.ui
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -12,9 +13,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridScope
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -27,8 +25,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Button
@@ -42,11 +38,9 @@ import com.jim.arrtv.data.ReleaseStage
 import com.jim.arrtv.data.Poster
 import com.jim.arrtv.data.SearchResult
 import com.jim.arrtv.data.StreamingPlatform
-import com.jim.arrtv.data.arrangedBy
 import com.jim.arrtv.data.tmdbGenres
 import java.util.Calendar
-import androidx.compose.material3.MaterialTheme as M3Theme
-import androidx.compose.material3.darkColorScheme as m3DarkColorScheme
+import java.util.Locale
 
 /**
  * The search box and filters sit at the top of the poster grid and scroll away with it, so the posters get
@@ -56,11 +50,9 @@ import androidx.compose.material3.darkColorScheme as m3DarkColorScheme
 fun SearchScreen(vm: ArrViewModel) {
     var term by rememberSaveable { mutableStateOf("") }
     var focusResults by remember { mutableStateOf(false) }
-    val keyboard = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
     val gridState = rememberLazyGridState()
     val submit = {
-        keyboard?.hide()
         focusResults = true
         vm.search(term)
     }
@@ -80,13 +72,15 @@ fun SearchScreen(vm: ArrViewModel) {
     val kind = vm.searchKind
     val query = vm.popularQuery
     val library = vm.library[kind]
-    val popular = vm.popular[query] ?: Loadable.Loading
-    val sort = vm.popularSort
+    val popular = if (query.loadsAll) {
+        (vm.popularAll[query.allKey] ?: Loadable.Loading).map { it.getValue(query.sort) }
+    } else {
+        (vm.popular[query] ?: Loadable.Loading).map { it.titles }
+    }
     // Mark what's already in Radarr/Sonarr, so it's easy to spot what's new.
-    val markedPopular = remember(popular, library, sort) {
-        if (popular !is Loadable.Loaded) return@remember popular
+    val markedPopular = remember(popular, library) {
         val owned = (library as? Loadable.Loaded)?.value.orEmpty().mapTo(HashSet()) { it.tmdbId }
-        Loadable.Loaded(popular.value.arrangedBy(sort).map { it.copy(inLibrary = it.tmdbId in owned) })
+        popular.map { titles -> titles.map { it.copy(inLibrary = it.tmdbId in owned) } }
     }
     // Radarr's search can't filter by release, so the streaming filter is applied here.
     val filterSearch = kind == MediaKind.MOVIE && vm.streamingOnly
@@ -102,7 +96,7 @@ fun SearchScreen(vm: ArrViewModel) {
     val content: Loadable<List<Poster>> = if (showingPopular) markedPopular else shownResults
 
     // A new list starts at the top.
-    LaunchedEffect(showingPopular, query, sort) { gridState.scrollToItem(0) }
+    LaunchedEffect(showingPopular, query) { gridState.scrollToItem(0) }
 
     // The header stays in the same grid whatever the list's state, so a focused filter chip keeps its focus
     // while the next list loads.
@@ -116,6 +110,9 @@ fun SearchScreen(vm: ArrViewModel) {
         },
         state = gridState,
         keepFocus = false,
+        // Room for the focused search box to grow without its top being cut off.
+        contentPadding = PaddingValues(top = 8.dp),
+        onNearEnd = { if (showingPopular) vm.loadMorePopular() },
     ) {
         fullWidth("search") {
             SearchRow(vm, term, onTermChange = { term = it }, onSubmit = submit)
@@ -136,6 +133,10 @@ fun SearchScreen(vm: ArrViewModel) {
             state = content,
             onRetry = { if (showingPopular) vm.loadPopular(force = true) else vm.search(term) },
             service = if (showingPopular) "TMDB" else kind.service,
+            loadingText = vm.popularAllProgress[query.allKey]?.takeIf { showingPopular && query.loadsAll }?.let { (loaded, total) ->
+                "Loading every ${if (kind == MediaKind.MOVIE) "movie" else "show"} to arrange them\u2026\n\n" +
+                    "%,d of %,d".format(Locale.US, loaded, total)
+            } ?: "Loading\u2026",
             notConfiguredText = if (showingPopular) {
                 "Search for something to add to ${kind.service}.\n\n" +
                     "To see popular ${kind.label.lowercase()} here, add a TMDB API key in Settings."
@@ -165,17 +166,18 @@ private fun SearchRow(vm: ArrViewModel, term: String, onTermChange: (String) -> 
             ) { Text(kind.label) }
         }
         Spacer(Modifier.width(12.dp))
-        M3Theme(colorScheme = m3DarkColorScheme()) {
-            OutlinedTextField(
-                value = term,
-                onValueChange = onTermChange,
-                label = { androidx.compose.material3.Text("Search ${vm.searchKind.label.lowercase()}") },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { onSubmit() }),
-                modifier = Modifier.width(560.dp),
-            )
-        }
+        val search = remember { SearchBoxState() }
+        SearchBox(
+            value = term,
+            onValueChange = onTermChange,
+            placeholder = "Search ${vm.searchKind.label.lowercase()}",
+            onSearch = onSubmit,
+            state = search,
+            onClear = {
+                vm.search("") // back to the popular titles
+                search.focus()
+            },
+        )
     }
 }
 
@@ -221,7 +223,17 @@ private fun PopularFilters(vm: ArrViewModel) {
         Dropdown(genres, vm.popularGenre, vm::choosePopularGenre)
         Dropdown(popularPlatforms, vm.popularPlatform, vm::choosePopularPlatform)
         if (kind == MediaKind.MOVIE) ReleaseDropdown(vm)
-        Dropdown(popularYears(vm.popularFromYear), vm.popularFromYear, vm::choosePopularYear)
+        val shows = kind == MediaKind.SHOW
+        Dropdown(
+            popularYears(vm.popularFromYear), vm.popularFromYear, vm::choosePopularYear,
+            prefix = if (shows) "Latest: " else "",
+        )
+        if (shows) {
+            Dropdown(
+                popularYears(vm.popularStartedYear), vm.popularStartedYear, vm::choosePopularStartedYear,
+                prefix = "Started: ",
+            )
+        }
         Dropdown(popularRatings, vm.popularMinRating, vm::choosePopularRating)
     }
 }
@@ -234,21 +246,22 @@ private fun LazyGridScope.status(
     state: Loadable<List<Poster>>,
     onRetry: () -> Unit,
     service: String,
+    loadingText: String,
     notConfiguredText: String,
     emptyText: String,
 ) {
     val text = when (state) {
         Loadable.Idle -> return
-        Loadable.Loading -> "Loading…"
+        Loadable.Loading -> loadingText
         Loadable.NotConfigured -> notConfiguredText
-        is Loadable.Error -> "Couldn't reach $service: ${state.message}"
+        is Loadable.Error -> if (state.plain) state.message else "Couldn't reach $service: ${state.message}"
         is Loadable.Loaded -> if (state.value.isEmpty()) emptyText else return
     }
     fullWidth("status") {
         Box(Modifier.fillMaxWidth().padding(top = 120.dp), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(text, textAlign = TextAlign.Center)
-                if (state is Loadable.Error) {
+                if (state is Loadable.Error && !state.plain) {
                     Spacer(Modifier.height(16.dp))
                     Button(onClick = onRetry) { Text("Retry") }
                 }
