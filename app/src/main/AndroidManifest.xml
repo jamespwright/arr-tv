@@ -8,7 +8,7 @@
 
     <!-- Cleartext is allowed because Radarr/Sonarr are plain http on the home LAN. -->
     <application
-        android:label="Arr TV"
+        android:label="Media Downloader"
         android:icon="@drawable/ic_launcher"
         android:banner="@drawable/banner"
         android:usesCleartextTraffic="true"
