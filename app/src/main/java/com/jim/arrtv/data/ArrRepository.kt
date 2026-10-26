@@ -31,7 +31,7 @@ interface Poster {
     val subtitle: String
     val posterUrl: String?
 
-    /** For movies: whether it's out on streaming yet, shown as a badge on the poster. Null for no badge. */
+    /** For movies: whether it's out on streaming yet. Null for shows. */
     val release: Release? get() = null
 }
 
@@ -43,8 +43,6 @@ data class MediaItem(
     override val subtitle: String,
     override val posterUrl: String?,
     val tmdbId: Int = 0,
-    /** Only for movies that haven't downloaded yet, to show whether they can. */
-    override val release: Release? = null,
 ) : Poster {
     override val key get() = "${kind.name}-$id"
 }
@@ -88,10 +86,7 @@ class ArrRepository(private val settings: ArrSettings) {
                     m.monitored -> "Wanted"
                     else -> "Not monitored"
                 }
-                MediaItem(
-                    MediaKind.MOVIE, m.id, m.title, "${m.year} · $status", m.images.posterUrl(settings.radarrUrl), m.tmdbId,
-                    release = if (m.hasFile) null else m.release,
-                )
+                MediaItem(MediaKind.MOVIE, m.id, m.title, "${m.year} · $status", m.images.posterUrl(settings.radarrUrl), m.tmdbId)
             }
         MediaKind.SHOW -> sonarr.series().let { series ->
             val lastAdded = lastEpisodeAdded(series)

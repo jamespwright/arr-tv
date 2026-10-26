@@ -26,7 +26,9 @@ import androidx.tv.material3.FilterChip
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.OutlinedButton
 import androidx.tv.material3.Text
+import androidx.compose.ui.graphics.Color
 import com.jim.arrtv.data.Release
+import com.jim.arrtv.data.ReleaseStage
 import com.jim.arrtv.data.seasonName
 
 @Composable
@@ -148,10 +150,15 @@ fun TrailerButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
     OutlinedButton(onClick = onClick, modifier = modifier) { Text("▶  Watch trailer") }
 }
 
-/** Whether a movie is on streaming yet, in its badge colour, with the dates. */
+/** Whether a movie is on streaming yet, with the dates: green once it is, orange in cinemas, grey before. */
 @Composable
 fun ReleaseLine(release: Release) {
-    Text(release.description, style = MaterialTheme.typography.titleMedium, color = release.color)
+    val color = when (release.stage) {
+        ReleaseStage.STREAMING -> Downloaded
+        ReleaseStage.IN_CINEMAS -> Color(0xFFFFB74D)
+        ReleaseStage.COMING, ReleaseStage.UNKNOWN -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Text(release.description, style = MaterialTheme.typography.titleMedium, color = color)
 }
 
 /** Chips for choosing which seasons of a show to monitor and download. */

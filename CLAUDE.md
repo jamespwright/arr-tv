@@ -40,6 +40,6 @@ Jim's bug reports and feature requests are in `TODO.md`. Add new ones there.
 - `ui/`: the ViewModel and Compose screens (tabs: Search, Downloads, Movies, TV Shows, Settings).
   Movies and TV Shows have a search box above the grid that filters it (`LibraryContent.kt`).
   Selecting a poster in Movies or TV Shows opens `DetailScreen` (status, search, monitoring, quality, delete, and seasons and episodes for shows).
-- `data/Release.kt` works out whether a movie is on streaming yet (the poster badges and the Search tab's "On streaming" filter).
+- `data/Release.kt` works out whether a movie is on streaming yet (the Search tab's "On streaming" filter and the line on movie pages).
 - Trailers: `data/Trailers.kt` finds YouTube ids (TMDB, then Radarr, then a YouTube search). `ui/TrailerScreen.kt` plays them
   in a WebView with YouTube's iframe player. The WebView needs MATCH_PARENT layout params, or the video is 0px tall (sound, black screen).

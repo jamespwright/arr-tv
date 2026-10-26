@@ -115,16 +115,7 @@ data class RadarrMovie(
     /** When it was added to Radarr, as an ISO timestamp. */
     val added: String? = null,
     val movieFile: FileDate? = null,
-    val inCinemas: String? = null,
-    val digitalRelease: String? = null,
-    val physicalRelease: String? = null,
-) {
-    val release
-        get() = Release.of(
-            cinemas = parseUtc(inCinemas),
-            streaming = listOfNotNull(parseUtc(digitalRelease), parseUtc(physicalRelease)).minOrNull(),
-        )
-}
+)
 
 /** Just the date a movie or episode file was imported, as an ISO timestamp. */
 @Serializable

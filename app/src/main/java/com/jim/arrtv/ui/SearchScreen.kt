@@ -114,8 +114,18 @@ fun SearchScreen(vm: ArrViewModel) {
         fullWidth("search") {
             SearchRow(vm, term, onTermChange = { term = it }, onSubmit = submit)
         }
-        if (kind == MediaKind.MOVIE) fullWidth("release") { ReleaseFilter(vm) }
-        if (showingPopular) fullWidth("filters") { PopularFilters(vm) }
+        // With popular titles showing, the streaming filter shares their row.
+        if (showingPopular) {
+            fullWidth("filters") { PopularFilters(vm) }
+        } else if (kind == MediaKind.MOVIE) {
+            fullWidth("release") {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Show", style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.width(4.dp))
+                    ReleaseChips(vm)
+                }
+            }
+        }
         status(
             state = content,
             onRetry = { if (showingPopular) vm.loadPopular(force = true) else vm.search(term) },
@@ -165,37 +175,43 @@ private fun SearchRow(vm: ArrViewModel, term: String, onTermChange: (String) -> 
 
 /**
  * Whether to show only movies already out on streaming (so they'll download), or ones still in cinemas and
- * coming soon too. Every movie poster has a badge saying which it is.
+ * coming soon too.
  */
 @Composable
-private fun ReleaseFilter(vm: ArrViewModel) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Show", style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.width(4.dp))
-        FilterChip(selected = vm.streamingOnly, onClick = { vm.chooseStreamingOnly(true) }) { Text("On streaming") }
-        FilterChip(selected = !vm.streamingOnly, onClick = { vm.chooseStreamingOnly(false) }) { Text("All releases") }
-    }
+private fun ReleaseChips(vm: ArrViewModel) {
+    FilterChip(selected = vm.streamingOnly, onClick = { vm.chooseStreamingOnly(true) }) { Text("On streaming") }
+    FilterChip(selected = !vm.streamingOnly, onClick = { vm.chooseStreamingOnly(false) }) { Text("All releases") }
 }
 
-/** Year filters for the popular titles: years ago, with null for any year. */
-private val popularYears = listOf(null to "Any year", 0 to "This year", 1 to "Last year")
+/** Year filters for the popular titles, as years ago. None selected is any year. */
+private val popularYears = listOf(0 to "This year", 1 to "Last year")
 
-/** Rating filters for the popular titles: the minimum TMDB rating out of 10, with null for any rating. */
-private val popularRatings = listOf(null to "Any rating", 7 to "★ 7+", 8 to "★ 8+")
+/** Rating filters for the popular titles: the minimum TMDB rating out of 10. None selected is any rating. */
+private val popularRatings = listOf(7 to "★ 7+", 8 to "★ 8+")
 
+/**
+ * All on one row, so there's no room for "Any year" and "Any rating" chips: pressing the selected year or
+ * rating again clears it instead.
+ */
 @Composable
 private fun PopularFilters(vm: ArrViewModel) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Popular ${vm.searchKind.label.lowercase()}", style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.width(4.dp))
+        if (vm.searchKind == MediaKind.MOVIE) {
+            ReleaseChips(vm)
+            Spacer(Modifier.width(20.dp))
+        }
         popularYears.forEach { (yearsAgo, label) ->
-            FilterChip(selected = vm.popularYearsAgo == yearsAgo, onClick = { vm.choosePopularYear(yearsAgo) }) {
+            val selected = vm.popularYearsAgo == yearsAgo
+            FilterChip(selected = selected, onClick = { vm.choosePopularYear(if (selected) null else yearsAgo) }) {
                 Text(label)
             }
         }
         Spacer(Modifier.width(20.dp))
         popularRatings.forEach { (rating, label) ->
-            FilterChip(selected = vm.popularMinRating == rating, onClick = { vm.choosePopularRating(rating) }) {
+            val selected = vm.popularMinRating == rating
+            FilterChip(selected = selected, onClick = { vm.choosePopularRating(if (selected) null else rating) }) {
                 Text(label)
             }
         }

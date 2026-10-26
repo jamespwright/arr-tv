@@ -1,26 +1,15 @@
 package com.jim.arrtv.data
 
-import java.text.SimpleDateFormat
 import java.util.Date
-import java.util.Locale
 
 /** Where a movie is in its release. Only [STREAMING] movies can actually be downloaded. */
 enum class ReleaseStage { STREAMING, IN_CINEMAS, COMING, UNKNOWN }
 
 /**
- * A movie's release, for the badge on its poster and the line on its page. [streaming] is the first digital
+ * A movie's release, for the Search tab's streaming filter and the line on its page. [streaming] is the first digital
  * or physical release anywhere, which is when downloads turn up. Either date can be in the future.
  */
 data class Release(val stage: ReleaseStage, val cinemas: Date? = null, val streaming: Date? = null) {
-    /** A couple of words for the poster badge. */
-    val badge: String
-        get() = when (stage) {
-            ReleaseStage.STREAMING -> "Streaming"
-            ReleaseStage.IN_CINEMAS -> "In cinemas"
-            ReleaseStage.COMING -> firstDate?.let { "Coming ${monthYear(it)}" } ?: "Coming soon"
-            ReleaseStage.UNKNOWN -> "No date yet"
-        }
-
     /** A sentence for the add and detail pages, with the dates. */
     val description: String
         get() = when (stage) {
@@ -33,8 +22,6 @@ data class Release(val stage: ReleaseStage, val cinemas: Date? = null, val strea
             ).joinToString(" · ").replaceFirstChar { it.uppercase() }
             ReleaseStage.UNKNOWN -> "No release date yet"
         }
-
-    private val firstDate get() = listOfNotNull(cinemas, streaming).minOrNull()
 
     companion object {
         /** Known to be out on streaming, without the dates (TMDB's "released on digital" filter says so). */
@@ -57,7 +44,5 @@ data class Release(val stage: ReleaseStage, val cinemas: Date? = null, val strea
 
         private const val ASSUMED_DAYS = 90L
         private const val DAY_MS = 24L * 60 * 60 * 1000
-
-        private fun monthYear(date: Date) = SimpleDateFormat("MMM yyyy", Locale.getDefault()).format(date)
     }
 }

@@ -59,10 +59,6 @@ import coil.compose.AsyncImage
 import com.jim.arrtv.data.MediaItem
 import com.jim.arrtv.data.MediaKind
 import com.jim.arrtv.data.Poster
-import com.jim.arrtv.data.Release
-import com.jim.arrtv.data.ReleaseStage
-import androidx.compose.foundation.background
-import androidx.compose.foundation.shape.RoundedCornerShape
 
 /** The colour for things that are downloaded and done. */
 val Downloaded = Color(0xFF81C784)
@@ -250,10 +246,7 @@ fun <T : Poster> PosterGrid(
 private fun PosterCard(item: Poster, modifier: Modifier, onClick: () -> Unit) {
     Column {
         Card(onClick = onClick, modifier = modifier.fillMaxWidth().aspectRatio(2f / 3f)) {
-            Box {
-                PosterImage(item.posterUrl, item.title)
-                item.release?.let { ReleaseBadge(it, Modifier.align(Alignment.BottomStart).padding(8.dp)) }
-            }
+            PosterImage(item.posterUrl, item.title)
         }
         Text(
             item.title,
@@ -265,27 +258,6 @@ private fun PosterCard(item: Poster, modifier: Modifier, onClick: () -> Unit) {
         Text(item.subtitle, style = MaterialTheme.typography.bodySmall, maxLines = 1)
     }
 }
-
-/** A coloured tag saying whether a movie is on streaming yet (and so will download), in cinemas, or coming. */
-@Composable
-fun ReleaseBadge(release: Release, modifier: Modifier = Modifier) {
-    Text(
-        release.badge,
-        style = MaterialTheme.typography.labelMedium,
-        color = Color.Black,
-        maxLines = 1,
-        modifier = modifier
-            .background(release.color, RoundedCornerShape(6.dp))
-            .padding(horizontal = 8.dp, vertical = 3.dp),
-    )
-}
-
-val Release.color
-    get() = when (stage) {
-        ReleaseStage.STREAMING -> Downloaded
-        ReleaseStage.IN_CINEMAS -> Color(0xFFFFB74D)
-        ReleaseStage.COMING, ReleaseStage.UNKNOWN -> Color(0xFFB0BEC5)
-    }
 
 @Composable
 fun PosterImage(url: String?, title: String, modifier: Modifier = Modifier.fillMaxSize()) {
