@@ -66,6 +66,12 @@ data class SearchResult(
 class ArrRepository(private val settings: ArrSettings) {
     private val radarr by lazy { ArrClient.create(settings.radarrUrl, settings.radarrKey, RadarrApi::class.java) }
     private val sonarr by lazy { ArrClient.create(settings.sonarrUrl, settings.sonarrKey, SonarrApi::class.java) }
+    private val radarrSearch by lazy {
+        ArrClient.create(settings.radarrUrl, settings.radarrKey, RadarrApi::class.java, ArrClient.SEARCH_TIMEOUT_S)
+    }
+    private val sonarrSearch by lazy {
+        ArrClient.create(settings.sonarrUrl, settings.sonarrKey, SonarrApi::class.java, ArrClient.SEARCH_TIMEOUT_S)
+    }
 
     fun isConfigured(kind: MediaKind) = when (kind) {
         MediaKind.MOVIE -> settings.radarrConfigured
@@ -234,6 +240,22 @@ class ArrRepository(private val settings: ArrSettings) {
         put("name", "EpisodeSearch")
         putJsonArray("episodeIds") { add(episode.id) }
     })
+
+    /** Interactive search: every release the indexers have, most seeders first. Nothing is grabbed. */
+    suspend fun releases(target: ReleaseTarget): List<IndexerRelease> = when (target) {
+        is ReleaseTarget.Movie -> radarrSearch.releases(target.movieId)
+        is ReleaseTarget.Episode -> sonarrSearch.releases(episodeId = target.episodeId)
+        is ReleaseTarget.Season -> sonarrSearch.releases(seriesId = target.seriesId, seasonNumber = target.seasonNumber)
+    }.bySeeders()
+
+    /** Sends a release from [releases] to the download client, even if Radarr/Sonarr rejected it. */
+    suspend fun grab(kind: MediaKind, release: IndexerRelease) {
+        val body = ReleaseGrab(release.guid, release.indexerId)
+        when (kind) {
+            MediaKind.MOVIE -> radarrSearch.grab(body)
+            MediaKind.SHOW -> sonarrSearch.grab(body)
+        }
+    }
 
     suspend fun setMonitored(details: LibraryDetails, monitored: Boolean) = update(details) { put("monitored", monitored) }
 

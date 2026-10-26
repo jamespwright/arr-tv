@@ -28,7 +28,8 @@ Don't press "Add and download", the Downloads "Remove" buttons, or any search or
 They start or delete real downloads (or files) on Jim's server. Monitoring toggles are fine if you switch them straight back.
 Send keys by name (`DPAD_UP`, `DPAD_DOWN`, `DPAD_LEFT`, `DPAD_RIGHT`, `DPAD_CENTER`, `BACK`), not raw keycodes. Keycode 23 is OK, not right, and mixing them up once started a real search.
 Short names like `up` or `right` are silently ignored.
-Detail pages open with focus on a search button, so never send ok straight after opening one. "Watch trailer" is the next button (right on movies, down on shows).
+Detail pages open with focus on a search button, so never send ok straight after opening one. On movies, "Interactive search" is the next button to the right, then "Trailer". On shows, "Watch trailer" is the next button down.
+Interactive search only lists releases, so it's safe to open. But never press "Download" in its confirm popup: that grabs the release for real.
 The add page (from a Search result) opens with focus on "Add and download", so move off it before pressing ok.
 If the TV's screensaver (`DreamActivity`) is the resumed activity, send `input keyevent KEYCODE_WAKEUP` to dismiss it. `am start` doesn't.
 
@@ -42,5 +43,8 @@ Jim's bug reports and feature requests are in `TODO.md`. Add new ones there.
   which only brings up the keyboard when you press OK.
   Selecting a poster in Movies or TV Shows opens `DetailScreen` (status, search, monitoring, quality, delete, and seasons and episodes for shows).
 - `data/Release.kt` works out whether a movie is on streaming yet (the Search tab's "On streaming" filter and the line on movie pages).
+- Interactive search: `data/Releases.kt` and `ui/ReleaseScreen.kt`. A popup over the detail page lists every release Radarr/Sonarr's
+  `GET /api/v3/release` finds for a movie, episode or season (most seeders first, rejected ones in red with the reason). Picking one
+  asks first, then `POST /api/v3/release` grabs it. These calls use a separate client with a 180s read timeout, because searches are slow (a season can take 90s).
 - Trailers: `data/Trailers.kt` finds YouTube ids (TMDB, then Radarr, then a YouTube search). `ui/TrailerScreen.kt` plays them
   in a WebView with YouTube's iframe player. The WebView needs MATCH_PARENT layout params, or the video is 0px tall (sound, black screen).

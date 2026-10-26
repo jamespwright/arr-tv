@@ -15,6 +15,7 @@ import retrofit2.http.POST
 import retrofit2.http.PUT
 import retrofit2.http.Path
 import retrofit2.http.Query
+import java.util.concurrent.TimeUnit
 
 // Retrofit doesn't allow service interfaces to extend each other, so Radarr and Sonarr each get their own.
 // Lookup results stay as raw JSON because the add endpoints expect them posted back almost unchanged.
@@ -52,6 +53,13 @@ interface RadarrApi {
 
     @HTTP(method = "DELETE", path = "api/v3/queue/bulk?removeFromClient=true", hasBody = true)
     suspend fun removeFromQueue(@Body ids: QueueIds, @Query("blocklist") blocklist: Boolean)
+
+    /** Searches the indexers and lists everything found, without grabbing anything. Slow: use [ArrClient.SEARCH_TIMEOUT_S]. */
+    @GET("api/v3/release")
+    suspend fun releases(@Query("movieId") movieId: Int): List<IndexerRelease>
+
+    @POST("api/v3/release")
+    suspend fun grab(@Body release: ReleaseGrab)
 }
 
 interface SonarrApi {
@@ -97,6 +105,17 @@ interface SonarrApi {
 
     @HTTP(method = "DELETE", path = "api/v3/queue/bulk?removeFromClient=true", hasBody = true)
     suspend fun removeFromQueue(@Body ids: QueueIds, @Query("blocklist") blocklist: Boolean)
+
+    /** Searches the indexers for one episode, or for one season's packs. Slow: use [ArrClient.SEARCH_TIMEOUT_S]. */
+    @GET("api/v3/release")
+    suspend fun releases(
+        @Query("episodeId") episodeId: Int? = null,
+        @Query("seriesId") seriesId: Int? = null,
+        @Query("seasonNumber") seasonNumber: Int? = null,
+    ): List<IndexerRelease>
+
+    @POST("api/v3/release")
+    suspend fun grab(@Body release: ReleaseGrab)
 }
 
 @Serializable
@@ -206,8 +225,12 @@ fun smallerPoster(url: String) = url.replace("image.tmdb.org/t/p/original/", "im
 object ArrClient {
     val json = Json { ignoreUnknownKeys = true }
 
-    fun <T> create(baseUrl: String, apiKey: String, service: Class<T>): T {
+    /** Interactive searches wait on every indexer. They take 10s to a minute or more (seasons are slowest), past OkHttp's 10s default. */
+    const val SEARCH_TIMEOUT_S = 180L
+
+    fun <T> create(baseUrl: String, apiKey: String, service: Class<T>, readTimeoutS: Long = 10): T {
         val http = OkHttpClient.Builder()
+            .readTimeout(readTimeoutS, TimeUnit.SECONDS)
             .addInterceptor { chain ->
                 chain.proceed(chain.request().newBuilder().header("X-Api-Key", apiKey).build())
             }

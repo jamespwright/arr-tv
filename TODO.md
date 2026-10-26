@@ -7,6 +7,10 @@ Jim's feedback from using the app on the TV. Tick items off (or delete them) as 
 - [x] **Going back up to the tab bar always lands on Settings.** It should land on the tab you're on (e.g. Downloads).
 - [x] **Deleting a show sends you back to the Search tab.** It should stay on the Movies or TV Shows grid, with focus on a nearby poster.
   Likely cause: the deleted poster had focus, so focus falls to the tab bar, and tabs switch on focus.
+- [x] **Back did random things**: jumped to Downloads or Settings, or quit the app.
+  Compose treats Back as "leave this focus group", which landed on whichever tab was nearest (and tabs switch on focus).
+  Done: Back from any screen goes up to the tab you're on, and the Search, Movies and TV Shows grids jump back to the top. Back on the tab bar asks "Exit arr-tv?" (Yes / No, focus on No).
+  On a search box you're typing in, Back still just stops typing first.
 
 - [x] **The episodes on a show's page are off the screen, and the page looks bunched up vertically.**
   Done: show pages now have two panes. The show, its actions and quality are on the left. Seasons and episodes are on the right,
@@ -27,6 +31,10 @@ Jim's feedback from using the app on the TV. Tick items off (or delete them) as 
 
 ## Features
 
+- [x] **Interactive search, like Sonarr and Radarr's web UI**, for when automatic search can't find anything.
+  Done: an "Interactive search" button on movie pages, on each season, and on each episode. It opens a popup listing every release
+  the indexers found, with name, size and seeders (most seeders first). Releases Sonarr/Radarr rejected show in red with the reason,
+  and can still be downloaded. Picking one asks "Download this release?" first, with focus on Cancel.
 - [x] **Choose seasons when adding a show.** The add page should let you pick which seasons to monitor and download.
   Done: season chips on the add page (none selected to start with). New seasons are always monitored.
 - [x] **Popular titles on the Search tab.** Before you type anything, show the most popular released movies or TV shows

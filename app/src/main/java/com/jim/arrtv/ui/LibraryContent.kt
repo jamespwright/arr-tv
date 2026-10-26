@@ -55,10 +55,10 @@ import com.jim.arrtv.data.Poster
 val Downloaded = Color(0xFF81C784)
 
 @Composable
-fun LibraryContent(vm: ArrViewModel, kind: MediaKind) {
+fun LibraryContent(vm: ArrViewModel, kind: MediaKind, scrollToTop: Int = 0) {
     val filter = vm.libraryFilter[kind].orEmpty()
     LoadableContent(vm.library[kind] ?: Loadable.Loading, kind, vm::refresh, emptyText = "Nothing in ${kind.service} yet.") { items ->
-        LibraryGrid(items, kind, filter, { vm.setLibraryFilter(kind, it) }, vm::openDetails)
+        LibraryGrid(items, kind, filter, { vm.setLibraryFilter(kind, it) }, vm::openDetails, scrollToTop)
     }
 }
 
@@ -72,6 +72,8 @@ private fun LibraryGrid(
     filter: String,
     onFilterChange: (String) -> Unit,
     onOpen: (MediaItem) -> Unit,
+    /** Goes back to the top of the grid each time it changes. */
+    scrollToTop: Int,
 ) {
     val search = remember { SearchBoxState() }
     val gridFocus = remember { FocusRequester() }
@@ -85,6 +87,7 @@ private fun LibraryGrid(
     }
 
     LaunchedEffect(query) { gridState.scrollToItem(0) }
+    LaunchedEffect(scrollToTop) { gridState.scrollToItem(0) }
     LaunchedEffect(jumpToGrid) {
         if (jumpToGrid) {
             withFrameNanos {} // let the row update first
@@ -245,11 +248,11 @@ fun PosterImage(url: String?, title: String, modifier: Modifier = Modifier.fillM
 
 /** A full-width clickable row for lists (downloads, episodes). */
 @Composable
-fun ListRow(onClick: () -> Unit, content: @Composable () -> Unit) {
+fun ListRow(onClick: () -> Unit, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     // A dark highlight instead of the default light one, so coloured status text stays readable.
     Surface(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         colors = ClickableSurfaceDefaults.colors(
             containerColor = Color.Transparent,
             focusedContainerColor = Color.White.copy(alpha = 0.12f),

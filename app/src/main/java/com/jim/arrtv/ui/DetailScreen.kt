@@ -178,9 +178,10 @@ private fun MovieContent(state: DetailState, details: LibraryDetails.Movie, vm: 
         if (!movie.hasFile) ReleaseLine(movie.release)
         ItemActions(
             service = state.item.kind.service,
-            searchLabel = if (movie.hasFile) "Search again" else "Search now",
+            searchLabel = "Search",
             monitored = movie.monitored,
             onSearch = vm::searchDetails,
+            onInteractiveSearch = vm::interactiveSearchMovie,
             onTrailer = { vm.openTrailer(details.trailer) },
             onMonitor = vm::setDetailMonitored,
             onDelete = vm::deleteDetails,
@@ -318,7 +319,10 @@ private fun StatusLine(status: String, color: Color, monitored: Boolean) {
     )
 }
 
-/** Search, trailer, monitor and delete, with delete asking first. Focus starts on search. [vertical] stacks the buttons. */
+/**
+ * Search, interactive search (if [onInteractiveSearch] is given), trailer, monitor and delete, with delete asking
+ * first. Focus starts on search. [vertical] stacks the buttons.
+ */
 @Composable
 private fun ItemActions(
     service: String,
@@ -328,6 +332,7 @@ private fun ItemActions(
     onTrailer: () -> Unit,
     onMonitor: (Boolean) -> Unit,
     onDelete: (deleteFiles: Boolean) -> Unit,
+    onInteractiveSearch: (() -> Unit)? = null,
     vertical: Boolean = false,
 ) {
     val wide = if (vertical) Modifier.fillMaxWidth() else Modifier
@@ -340,9 +345,16 @@ private fun ItemActions(
     if (!confirming) {
         ButtonGroup(vertical) {
             Button(onClick = onSearch, modifier = wide.focusRequester(searchFocus)) { Text(searchLabel) }
-            TrailerButton(onTrailer, wide)
+            onInteractiveSearch?.let { OutlinedButton(onClick = it, modifier = wide) { Text("Interactive search") } }
+            // Shorter labels across the page (here and on monitor), so all five buttons fit on one line.
+            TrailerButton(onTrailer, wide, label = if (vertical) "Watch trailer" else "Trailer")
             OutlinedButton(onClick = { onMonitor(!monitored) }, modifier = wide) {
-                Text(if (monitored) "Stop monitoring" else "Start monitoring")
+                Text(
+                    when {
+                        vertical -> if (monitored) "Stop monitoring" else "Start monitoring"
+                        else -> if (monitored) "Unmonitor" else "Monitor"
+                    },
+                )
             }
             OutlinedButton(
                 onClick = {
@@ -350,7 +362,7 @@ private fun ItemActions(
                     askedBefore = true
                 },
                 modifier = wide.focusRequester(deleteFocus),
-            ) { Text("Delete…") }
+            ) { Text(if (vertical) "Delete…" else "Delete") }
         }
     } else {
         ButtonGroup(vertical) {
@@ -383,7 +395,7 @@ private fun ButtonGroup(vertical: Boolean, content: @Composable () -> Unit) {
     if (vertical) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) { content() }
     } else {
-        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) { content() }
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) { content() }
     }
 }
 
@@ -410,12 +422,16 @@ private fun QualityChips(profiles: List<QualityProfile>, selectedId: Int, onSele
 @Composable
 private fun SeasonActions(season: SeasonInfo, vm: ArrViewModel) {
     val stats = season.statistics
-    Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-        OutlinedButton(onClick = { vm.searchSeason(season.seasonNumber) }) {
-            Text("Search ${seasonName(season.seasonNumber)}")
-        }
-        OutlinedButton(onClick = { vm.setSeasonMonitored(season.seasonNumber, !season.monitored) }) {
-            Text(if (season.monitored) "Stop monitoring season" else "Monitor season")
+    // The stats go underneath, as three buttons leave no room beside them.
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            OutlinedButton(onClick = { vm.searchSeason(season.seasonNumber) }) {
+                Text("Search ${seasonName(season.seasonNumber)}")
+            }
+            OutlinedButton(onClick = { vm.interactiveSearchSeason(season.seasonNumber) }) { Text("Interactive search") }
+            OutlinedButton(onClick = { vm.setSeasonMonitored(season.seasonNumber, !season.monitored) }) {
+                Text(if (season.monitored) "Stop monitoring season" else "Monitor season")
+            }
         }
         Text(
             listOfNotNull(
@@ -424,7 +440,6 @@ private fun SeasonActions(season: SeasonInfo, vm: ArrViewModel) {
             ).joinToString(" · "),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.weight(1f),
         )
     }
 }
@@ -484,10 +499,10 @@ private fun EpisodeActions(episode: SonarrEpisode, vm: ArrViewModel) {
         episode.overview?.let {
             Text(it, style = MaterialTheme.typography.bodyMedium, maxLines = 4, overflow = TextOverflow.Ellipsis)
         }
+        // Short labels, so the three buttons fit across the episode pane.
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            OutlinedButton(onClick = { vm.searchEpisode(episode) }) {
-                Text(if (episode.hasFile) "Search again" else "Search for this episode")
-            }
+            OutlinedButton(onClick = { vm.searchEpisode(episode) }) { Text("Search") }
+            OutlinedButton(onClick = { vm.interactiveSearchEpisode(episode) }) { Text("Interactive search") }
             OutlinedButton(onClick = { vm.setEpisodeMonitored(episode, !episode.monitored) }) {
                 Text(if (episode.monitored) "Stop monitoring" else "Monitor episode")
             }

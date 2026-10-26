@@ -45,9 +45,10 @@ import java.util.Locale
 /**
  * The search box and filters sit at the top of the poster grid and scroll away with it, so the posters get
  * the whole screen once you move down into them. Before anything is searched, the grid shows popular titles.
+ * It goes back to the top each time [scrollToTop] changes.
  */
 @Composable
-fun SearchScreen(vm: ArrViewModel) {
+fun SearchScreen(vm: ArrViewModel, scrollToTop: Int = 0) {
     var term by rememberSaveable { mutableStateOf("") }
     var focusResults by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
@@ -97,6 +98,7 @@ fun SearchScreen(vm: ArrViewModel) {
 
     // A new list starts at the top.
     LaunchedEffect(showingPopular, query) { gridState.scrollToItem(0) }
+    LaunchedEffect(scrollToTop) { gridState.scrollToItem(0) }
 
     // The header stays in the same grid whatever the list's state, so a focused filter chip keeps its focus
     // while the next list loads.

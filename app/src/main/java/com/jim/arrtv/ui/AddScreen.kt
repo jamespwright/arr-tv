@@ -146,8 +146,8 @@ fun AddScreen(
 }
 
 @Composable
-fun TrailerButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
-    OutlinedButton(onClick = onClick, modifier = modifier) { Text("▶  Watch trailer") }
+fun TrailerButton(onClick: () -> Unit, modifier: Modifier = Modifier, label: String = "Watch trailer") {
+    OutlinedButton(onClick = onClick, modifier = modifier) { Text("▶  $label") }
 }
 
 /** Whether a movie is on streaming yet, with the dates: green once it is, orange in cinemas, grey before. */

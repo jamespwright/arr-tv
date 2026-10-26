@@ -9,6 +9,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.jim.arrtv.data.ArrRepository
 import com.jim.arrtv.data.ArrSettings
+import com.jim.arrtv.data.IndexerRelease
 import com.jim.arrtv.data.LibraryDetails
 import com.jim.arrtv.data.MediaItem
 import com.jim.arrtv.data.MediaKind
@@ -17,6 +18,7 @@ import com.jim.arrtv.data.PopularSort
 import com.jim.arrtv.data.PopularTitle
 import com.jim.arrtv.data.QualityProfile
 import com.jim.arrtv.data.QueueItem
+import com.jim.arrtv.data.ReleaseTarget
 import com.jim.arrtv.data.SearchResult
 import com.jim.arrtv.data.SonarrEpisode
 import com.jim.arrtv.data.StreamingPlatform
@@ -98,6 +100,19 @@ data class DetailState(
     val profiles: List<QualityProfile> = emptyList(),
     val working: Boolean = false,
     val message: DetailMessage? = null,
+)
+
+/**
+ * An interactive search open over the detail page: every release the indexers offered for [title], for picking
+ * one by hand. [confirming] is the release waiting on "Download it?", and [grabbing] is true while it's being sent.
+ */
+data class ReleaseSearch(
+    val title: String,
+    val target: ReleaseTarget,
+    val releases: Loadable<List<IndexerRelease>> = Loadable.Loading,
+    val confirming: IndexerRelease? = null,
+    val grabbing: Boolean = false,
+    val grabError: String? = null,
 )
 
 /**
@@ -210,6 +225,11 @@ class ArrViewModel(app: Application) : AndroidViewModel(app) {
         private set
     private var detailChanged = false
 
+    /** The interactive search open over the detail page, if any. */
+    var releaseSearch by mutableStateOf<ReleaseSearch?>(null)
+        private set
+    private var releaseJob: Job? = null
+
     /** The trailer playing, if any. It opens over whichever page it was started from. */
     var trailer by mutableStateOf<TrailerState?>(null)
         private set
@@ -305,6 +325,68 @@ class ArrViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setEpisodeMonitored(episode: SonarrEpisode, monitored: Boolean) =
         detailAction { repo.setEpisodeMonitored(episode, monitored) }
+
+    fun interactiveSearchMovie() {
+        val movie = ((detail?.details as? Loadable.Loaded)?.value as? LibraryDetails.Movie)?.movie ?: return
+        openReleaseSearch(movie.title, ReleaseTarget.Movie(movie.id))
+    }
+
+    fun interactiveSearchSeason(seasonNumber: Int) {
+        val series = ((detail?.details as? Loadable.Loaded)?.value as? LibraryDetails.Show)?.series ?: return
+        openReleaseSearch("${series.title} · ${seasonName(seasonNumber)}", ReleaseTarget.Season(series.id, seasonNumber))
+    }
+
+    fun interactiveSearchEpisode(episode: SonarrEpisode) {
+        val series = ((detail?.details as? Loadable.Loaded)?.value as? LibraryDetails.Show)?.series ?: return
+        openReleaseSearch("${series.title} · ${episode.code}", ReleaseTarget.Episode(episode.id))
+    }
+
+    private fun openReleaseSearch(title: String, target: ReleaseTarget) {
+        releaseJob?.cancel()
+        val state = ReleaseSearch(title, target)
+        releaseSearch = state
+        releaseJob = viewModelScope.launch {
+            val releases = load { repo.releases(target) }
+            if (releaseSearch === state) releaseSearch = state.copy(releases = releases)
+        }
+    }
+
+    fun retryReleaseSearch() {
+        releaseSearch?.let { openReleaseSearch(it.title, it.target) }
+    }
+
+    /** Closing cancels a search still waiting on the indexers. */
+    fun closeReleaseSearch() {
+        releaseJob?.cancel()
+        releaseSearch = null
+    }
+
+    fun confirmRelease(release: IndexerRelease?) {
+        releaseSearch?.takeIf { !it.grabbing }?.let { releaseSearch = it.copy(confirming = release, grabError = null) }
+    }
+
+    /** Grabs the release being confirmed. On success, the search closes and the detail page says so. */
+    fun grabRelease() {
+        val state = releaseSearch ?: return
+        val release = state.confirming ?: return
+        if (state.grabbing) return
+        releaseSearch = state.copy(grabbing = true, grabError = null)
+        viewModelScope.launch {
+            try {
+                repo.grab(state.target.kind, release)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (releaseSearch?.target == state.target) {
+                    releaseSearch = releaseSearch?.copy(grabbing = false, grabError = e.describe())
+                }
+                return@launch
+            }
+            if (releaseSearch?.target == state.target) closeReleaseSearch()
+            detailChanged = true
+            detail?.let { detail = it.copy(message = DetailMessage("Downloading ${release.title}. It'll show up in Downloads.")) }
+        }
+    }
 
     fun deleteDetails(deleteFiles: Boolean) = detailAction(reload = false) {
         repo.delete(it, deleteFiles)

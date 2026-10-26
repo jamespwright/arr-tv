@@ -1,6 +1,11 @@
 package com.jim.arrtv.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -171,6 +176,12 @@ fun SearchBox(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .focusRequester(fieldFocus)
+                                // Back with the keyboard already hidden stops typing, rather than going up to the tab bar.
+                                .onPreviewKeyEvent {
+                                    if (it.key != Key.Back) return@onPreviewKeyEvent false
+                                    if (it.type == KeyEventType.KeyUp) finish(refocus = true)
+                                    true
+                                }
                                 .onFocusChanged {
                                     // Moving off with the D-pad stops typing, without pulling focus back.
                                     if (it.isFocused) hadFocus = true else if (hadFocus && state.editing) finish(refocus = false)
