@@ -44,3 +44,14 @@ Jim's feedback from using the app on the TV. Tick items off (or delete them) as 
   Done: YouTube's embedded player in a full-screen WebView. TMDB's official
   trailers first, then Radarr's, then a YouTube search for "[title] [year] trailer". If YouTube won't let one play
   outside its app, the next is tried. OK pauses, left/right skip 10 seconds, Back closes. Captions are off.
+- [x] **Arrange by, genre and streaming platform dropdowns** on the Search tab's popular titles, for movies and TV.
+  Done: dropdowns on the same row as the year and rating ones (saved), with no heading so they all fit. Arrange by: Most popular / Top rated / Newest / Title A–Z. It only
+  reorders the list (the most popular titles matching the filters), so it never changes what's in it. Genres are TMDB's, kept
+  separately for movies and TV. Platforms are subscription services (Netflix, Prime Video, Disney+, Apple TV+, HBO Max,
+  Paramount+, Stan, Binge, Hulu, Peacock, Crunchyroll). TMDB only knows what's on a service per country, so each one is
+  checked in the US, UK, Australia and Canada (where it exists there) and the lists are merged.
+- [x] **Year and rating filters as "or later" / "or higher".** Year: any year, or 2026+ back to 2016+ (that year or
+  later, ten years back from this one). Rating: any rating, or ★ 1+ to ★ 10. The year is saved as the year itself,
+  so 2024+ stays 2024+ next year.
+- [x] **Popular shows with few TMDB votes were missing** (The Secret Lives of Mormon Wives, on Disney+ with Reality
+  chosen). The lists asked for at least 50 votes. Now it's 10, or 50 only when filtering by rating.

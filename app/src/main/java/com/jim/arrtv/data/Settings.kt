@@ -52,11 +52,14 @@ class SettingsStore(context: Context) {
         prefs.edit().putString(SEARCH_KIND, kind.name).apply()
     }
 
-    /** The year filter for popular titles, as years ago (0 is this year). Null is any year. */
-    fun popularYearsAgo(): Int? = prefs.getInt(POPULAR_YEARS_AGO, -1).takeIf { it >= 0 }
+    /**
+     * The year filter for popular titles: that year or later. Null is any year. It's the year itself, so
+     * "2024+" stays 2024+ when the new year comes.
+     */
+    fun popularFromYear(): Int? = prefs.getInt(POPULAR_FROM_YEAR, -1).takeIf { it > 0 }
 
-    fun setPopularYearsAgo(yearsAgo: Int?) {
-        prefs.edit().putInt(POPULAR_YEARS_AGO, yearsAgo ?: -1).apply()
+    fun setPopularFromYear(year: Int?) {
+        prefs.edit().putInt(POPULAR_FROM_YEAR, year ?: -1).apply()
     }
 
     /** The minimum TMDB rating for popular titles, out of 10. Null is any rating. */
@@ -73,6 +76,30 @@ class SettingsStore(context: Context) {
         prefs.edit().putBoolean(STREAMING_ONLY, streamingOnly).apply()
     }
 
+    /** How popular titles are arranged. Most popular unless changed. */
+    fun popularSort(): PopularSort =
+        PopularSort.entries.firstOrNull { it.name == prefs.getString(POPULAR_SORT, null) } ?: PopularSort.POPULAR
+
+    fun setPopularSort(sort: PopularSort) {
+        prefs.edit().putString(POPULAR_SORT, sort.name).apply()
+    }
+
+    /** The TMDB genre id for popular titles of [kind] (movies and shows have different ones). Null is any genre. */
+    fun popularGenre(kind: MediaKind): Int? =
+        prefs.getInt("${POPULAR_GENRE}_${kind.name}", -1).takeIf { id -> tmdbGenres(kind).any { it.first == id } }
+
+    fun setPopularGenre(kind: MediaKind, genre: Int?) {
+        prefs.edit().putInt("${POPULAR_GENRE}_${kind.name}", genre ?: -1).apply()
+    }
+
+    /** The streaming service popular titles are limited to. Null is any. */
+    fun popularPlatform(): StreamingPlatform? =
+        StreamingPlatform.entries.firstOrNull { it.name == prefs.getString(POPULAR_PLATFORM, null) }
+
+    fun setPopularPlatform(platform: StreamingPlatform?) {
+        prefs.edit().putString(POPULAR_PLATFORM, platform?.name).apply()
+    }
+
     private companion object {
         const val RADARR_URL = "radarr_url"
         const val RADARR_KEY = "radarr_key"
@@ -80,8 +107,11 @@ class SettingsStore(context: Context) {
         const val SONARR_KEY = "sonarr_key"
         const val TMDB_KEY = "tmdb_key"
         const val SEARCH_KIND = "search_kind"
-        const val POPULAR_YEARS_AGO = "popular_years_ago"
+        const val POPULAR_FROM_YEAR = "popular_from_year"
         const val POPULAR_MIN_RATING = "popular_min_rating"
         const val STREAMING_ONLY = "streaming_only"
+        const val POPULAR_SORT = "popular_sort"
+        const val POPULAR_GENRE = "popular_genre"
+        const val POPULAR_PLATFORM = "popular_platform"
     }
 }

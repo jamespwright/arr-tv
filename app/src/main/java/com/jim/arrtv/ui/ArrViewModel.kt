@@ -13,11 +13,13 @@ import com.jim.arrtv.data.LibraryDetails
 import com.jim.arrtv.data.MediaItem
 import com.jim.arrtv.data.MediaKind
 import com.jim.arrtv.data.PopularQuery
+import com.jim.arrtv.data.PopularSort
 import com.jim.arrtv.data.PopularTitle
 import com.jim.arrtv.data.QualityProfile
 import com.jim.arrtv.data.QueueItem
 import com.jim.arrtv.data.SearchResult
 import com.jim.arrtv.data.SonarrEpisode
+import com.jim.arrtv.data.StreamingPlatform
 import com.jim.arrtv.data.code
 import com.jim.arrtv.data.seasonName
 import com.jim.arrtv.data.SettingsStore
@@ -112,8 +114,8 @@ class ArrViewModel(app: Application) : AndroidViewModel(app) {
     private var searchJob: Job? = null
     private var lastSearch: String? = null
 
-    /** The year filter for popular titles on the Search tab: 0 is this year, 1 last year, null any year. */
-    var popularYearsAgo by mutableStateOf(store.popularYearsAgo())
+    /** The year filter for popular titles on the Search tab: that year or later, or null for any year. */
+    var popularFromYear by mutableStateOf(store.popularFromYear())
         private set
 
     /** The minimum TMDB rating for popular titles (out of 10), or null for any rating. */
@@ -124,9 +126,31 @@ class ArrViewModel(app: Application) : AndroidViewModel(app) {
     var streamingOnly by mutableStateOf(store.streamingOnly())
         private set
 
+    /** How the popular titles are arranged. It only reorders them, so nothing has to be fetched. */
+    var popularSort by mutableStateOf(store.popularSort())
+        private set
+
+    /** The genre filter for popular titles, kept separately for movies and shows since their genres differ. */
+    private val popularGenres = mutableStateMapOf<MediaKind, Int?>().apply {
+        MediaKind.entries.forEach { put(it, store.popularGenre(it)) }
+    }
+    val popularGenre get() = popularGenres[searchKind]
+
+    /** The streaming service the popular titles are limited to, or null for any. */
+    var popularPlatform by mutableStateOf(store.popularPlatform())
+        private set
+
     /** Popular lists already fetched, kept until the app closes so flipping between filters is instant. */
     val popular = mutableStateMapOf<PopularQuery, Loadable<List<PopularTitle>>>()
-    val popularQuery get() = PopularQuery(searchKind, popularYearsAgo, popularMinRating, streamingOnly && searchKind == MediaKind.MOVIE)
+    val popularQuery
+        get() = PopularQuery(
+            searchKind,
+            popularFromYear,
+            popularMinRating,
+            streamingOnly && searchKind == MediaKind.MOVIE,
+            popularGenre,
+            popularPlatform,
+        )
 
     /** The search result currently open on the add screen, if any. */
     var adding by mutableStateOf<AddState?>(null)
@@ -339,10 +363,10 @@ class ArrViewModel(app: Application) : AndroidViewModel(app) {
         loadPopular()
     }
 
-    fun choosePopularYear(yearsAgo: Int?) {
-        if (yearsAgo == popularYearsAgo) return
-        popularYearsAgo = yearsAgo
-        store.setPopularYearsAgo(yearsAgo)
+    fun choosePopularYear(fromYear: Int?) {
+        if (fromYear == popularFromYear) return
+        popularFromYear = fromYear
+        store.setPopularFromYear(fromYear)
         loadPopular()
     }
 
@@ -357,6 +381,26 @@ class ArrViewModel(app: Application) : AndroidViewModel(app) {
         if (only == streamingOnly) return
         streamingOnly = only
         store.setStreamingOnly(only)
+        loadPopular()
+    }
+
+    fun choosePopularSort(sort: PopularSort) {
+        if (sort == popularSort) return
+        popularSort = sort
+        store.setPopularSort(sort)
+    }
+
+    fun choosePopularGenre(genre: Int?) {
+        if (genre == popularGenre) return
+        popularGenres[searchKind] = genre
+        store.setPopularGenre(searchKind, genre)
+        loadPopular()
+    }
+
+    fun choosePopularPlatform(platform: StreamingPlatform?) {
+        if (platform == popularPlatform) return
+        popularPlatform = platform
+        store.setPopularPlatform(platform)
         loadPopular()
     }
 

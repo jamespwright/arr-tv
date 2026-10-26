@@ -36,10 +36,15 @@ import androidx.tv.material3.FilterChip
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.jim.arrtv.data.MediaKind
+import com.jim.arrtv.data.PopularSort
 import com.jim.arrtv.data.PopularTitle
 import com.jim.arrtv.data.ReleaseStage
 import com.jim.arrtv.data.Poster
 import com.jim.arrtv.data.SearchResult
+import com.jim.arrtv.data.StreamingPlatform
+import com.jim.arrtv.data.arrangedBy
+import com.jim.arrtv.data.tmdbGenres
+import java.util.Calendar
 import androidx.compose.material3.MaterialTheme as M3Theme
 import androidx.compose.material3.darkColorScheme as m3DarkColorScheme
 
@@ -76,11 +81,12 @@ fun SearchScreen(vm: ArrViewModel) {
     val query = vm.popularQuery
     val library = vm.library[kind]
     val popular = vm.popular[query] ?: Loadable.Loading
+    val sort = vm.popularSort
     // Mark what's already in Radarr/Sonarr, so it's easy to spot what's new.
-    val markedPopular = remember(popular, library) {
+    val markedPopular = remember(popular, library, sort) {
         if (popular !is Loadable.Loaded) return@remember popular
         val owned = (library as? Loadable.Loaded)?.value.orEmpty().mapTo(HashSet()) { it.tmdbId }
-        Loadable.Loaded(popular.value.map { it.copy(inLibrary = it.tmdbId in owned) })
+        Loadable.Loaded(popular.value.arrangedBy(sort).map { it.copy(inLibrary = it.tmdbId in owned) })
     }
     // Radarr's search can't filter by release, so the streaming filter is applied here.
     val filterSearch = kind == MediaKind.MOVIE && vm.streamingOnly
@@ -96,7 +102,7 @@ fun SearchScreen(vm: ArrViewModel) {
     val content: Loadable<List<Poster>> = if (showingPopular) markedPopular else shownResults
 
     // A new list starts at the top.
-    LaunchedEffect(showingPopular, query) { gridState.scrollToItem(0) }
+    LaunchedEffect(showingPopular, query, sort) { gridState.scrollToItem(0) }
 
     // The header stays in the same grid whatever the list's state, so a focused filter chip keeps its focus
     // while the next list loads.
@@ -182,20 +188,40 @@ private fun ReleaseDropdown(vm: ArrViewModel) {
     Dropdown(listOf(true to "On streaming", false to "All releases"), vm.streamingOnly, vm::chooseStreamingOnly)
 }
 
-/** Year filters for the popular titles: years ago, with null for any year. */
-private val popularYears = listOf(null to "Any year", 0 to "This year", 1 to "Last year")
+/**
+ * Year filters for the popular titles: that year or later, from this year back ten, with null for any year.
+ * A year chosen long ago that's no longer in the list still shows.
+ */
+private fun popularYears(selected: Int?): List<Pair<Int?, String>> {
+    val thisYear = Calendar.getInstance().get(Calendar.YEAR)
+    val years = (thisYear downTo thisYear - 10).toMutableList()
+    if (selected != null && selected !in years) years += selected
+    return listOf(null to "Any year") + years.map { it to "$it+" }
+}
 
 /** Rating filters for the popular titles: the minimum TMDB rating out of 10, with null for any rating. */
-private val popularRatings = listOf(null to "Any rating", 7 to "★ 7+", 8 to "★ 8+")
+private val popularRatings = listOf(null to "Any rating") + (1..9).map { it to "★ $it+" } + (10 to "★ 10")
 
-/** Dropdowns rather than a chip per choice, so they all fit on one row. */
+/** How the popular titles can be arranged. */
+private val popularSorts = PopularSort.entries.map { it to it.label }
+
+/** Streaming services to limit the popular titles to, with null for any. */
+private val popularPlatforms = listOf(null to "All platforms") + StreamingPlatform.entries.map { it to it.label }
+
+/**
+ * Dropdowns rather than a chip per choice, so they all fit on one row. There's no heading, as the Movies and TV
+ * Shows chips above already say which this is, and the row only just fits with the longest choices.
+ */
 @Composable
 private fun PopularFilters(vm: ArrViewModel) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text("Popular ${vm.searchKind.label.lowercase()}", style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.width(4.dp))
-        if (vm.searchKind == MediaKind.MOVIE) ReleaseDropdown(vm)
-        Dropdown(popularYears, vm.popularYearsAgo, vm::choosePopularYear)
+    val kind = vm.searchKind
+    val genres = remember(kind) { listOf(null to "All genres") + tmdbGenres(kind) }
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Dropdown(popularSorts, vm.popularSort, vm::choosePopularSort, prefix = "Arrange by: ")
+        Dropdown(genres, vm.popularGenre, vm::choosePopularGenre)
+        Dropdown(popularPlatforms, vm.popularPlatform, vm::choosePopularPlatform)
+        if (kind == MediaKind.MOVIE) ReleaseDropdown(vm)
+        Dropdown(popularYears(vm.popularFromYear), vm.popularFromYear, vm::choosePopularYear)
         Dropdown(popularRatings, vm.popularMinRating, vm::choosePopularRating)
     }
 }
