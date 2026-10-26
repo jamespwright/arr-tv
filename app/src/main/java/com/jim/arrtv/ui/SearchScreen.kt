@@ -122,7 +122,7 @@ fun SearchScreen(vm: ArrViewModel) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("Show", style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.width(4.dp))
-                    ReleaseChips(vm)
+                    ReleaseDropdown(vm)
                 }
             }
         }
@@ -178,43 +178,25 @@ private fun SearchRow(vm: ArrViewModel, term: String, onTermChange: (String) -> 
  * coming soon too.
  */
 @Composable
-private fun ReleaseChips(vm: ArrViewModel) {
-    FilterChip(selected = vm.streamingOnly, onClick = { vm.chooseStreamingOnly(true) }) { Text("On streaming") }
-    FilterChip(selected = !vm.streamingOnly, onClick = { vm.chooseStreamingOnly(false) }) { Text("All releases") }
+private fun ReleaseDropdown(vm: ArrViewModel) {
+    Dropdown(listOf(true to "On streaming", false to "All releases"), vm.streamingOnly, vm::chooseStreamingOnly)
 }
 
-/** Year filters for the popular titles, as years ago. None selected is any year. */
-private val popularYears = listOf(0 to "This year", 1 to "Last year")
+/** Year filters for the popular titles: years ago, with null for any year. */
+private val popularYears = listOf(null to "Any year", 0 to "This year", 1 to "Last year")
 
-/** Rating filters for the popular titles: the minimum TMDB rating out of 10. None selected is any rating. */
-private val popularRatings = listOf(7 to "★ 7+", 8 to "★ 8+")
+/** Rating filters for the popular titles: the minimum TMDB rating out of 10, with null for any rating. */
+private val popularRatings = listOf(null to "Any rating", 7 to "★ 7+", 8 to "★ 8+")
 
-/**
- * All on one row, so there's no room for "Any year" and "Any rating" chips: pressing the selected year or
- * rating again clears it instead.
- */
+/** Dropdowns rather than a chip per choice, so they all fit on one row. */
 @Composable
 private fun PopularFilters(vm: ArrViewModel) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         Text("Popular ${vm.searchKind.label.lowercase()}", style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.width(4.dp))
-        if (vm.searchKind == MediaKind.MOVIE) {
-            ReleaseChips(vm)
-            Spacer(Modifier.width(20.dp))
-        }
-        popularYears.forEach { (yearsAgo, label) ->
-            val selected = vm.popularYearsAgo == yearsAgo
-            FilterChip(selected = selected, onClick = { vm.choosePopularYear(if (selected) null else yearsAgo) }) {
-                Text(label)
-            }
-        }
-        Spacer(Modifier.width(20.dp))
-        popularRatings.forEach { (rating, label) ->
-            val selected = vm.popularMinRating == rating
-            FilterChip(selected = selected, onClick = { vm.choosePopularRating(if (selected) null else rating) }) {
-                Text(label)
-            }
-        }
+        if (vm.searchKind == MediaKind.MOVIE) ReleaseDropdown(vm)
+        Dropdown(popularYears, vm.popularYearsAgo, vm::choosePopularYear)
+        Dropdown(popularRatings, vm.popularMinRating, vm::choosePopularRating)
     }
 }
 

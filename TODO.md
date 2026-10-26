@@ -36,8 +36,8 @@ Jim's feedback from using the app on the TV. Tick items off (or delete them) as 
   Anything with no file yet goes by when it was added to Radarr or Sonarr, so new requests show up at the front.
 - [x] **Show which movies are out on streaming**, so it's clear which ones will actually download.
   Done: an "On streaming / All releases" filter on the Search tab (saved) hides or shows the ones not out yet, for both
-  popular titles and search results. It sits on the "Popular movies" row, so "Any year" and "Any rating" chips went:
-  pressing the selected year or rating again clears it. The add and detail pages say "On streaming since <date>",
+  popular titles and search results. The release, year and rating filters are dropdowns (`ui/Dropdown.kt`), so they
+  all fit on the "Popular movies" row. The add and detail pages say "On streaming since <date>",
   "In cinemas since <date> · streaming from <date>", and so on. (Poster badges were tried and taken out.) "Streaming" means a digital or physical release anywhere, from TMDB or Radarr,
   or 90 days in cinemas with no date (as Radarr assumes).
 - [x] **Watch trailer button** on the add and detail pages, for movies and shows, that plays inside the app.
