@@ -54,7 +54,8 @@ fun AddScreen(
         )
         Column(
             verticalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.verticalScroll(rememberScrollState()),
+            // The bottom padding is inside the scrolling area, so the focused button's zoom isn't cut off.
+            modifier = Modifier.verticalScroll(rememberScrollState()).padding(bottom = 16.dp),
         ) {
             Text(result.title, style = MaterialTheme.typography.displaySmall)
             Text(result.subtitle, style = MaterialTheme.typography.titleMedium)

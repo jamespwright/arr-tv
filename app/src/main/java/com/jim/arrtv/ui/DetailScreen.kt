@@ -161,7 +161,11 @@ private fun MovieContent(state: DetailState, details: LibraryDetails.Movie, vm: 
         movie.monitored -> "Missing" to MaterialTheme.colorScheme.error
         else -> "Missing" to MaterialTheme.colorScheme.onSurfaceVariant
     }
-    Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    // The bottom padding is inside the scrolling area, so the focused chip's zoom isn't cut off.
+    Column(
+        Modifier.verticalScroll(rememberScrollState()).padding(bottom = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
         Text(movie.title, style = MaterialTheme.typography.displaySmall)
         MetaLine(
             movie.year.takeIf { it > 0 }?.toString(),
